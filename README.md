@@ -1,36 +1,49 @@
 # claude-agent-app-template
 
-Claude Agent SDK + Streamlit の最小チャットアプリテンプレートです。
+A minimal chat application template built with Claude Agent SDK + Streamlit.
 
-このテンプレートの目的:
-- Python側は「チャットUI + SDK接続」だけにする
-- エージェント/スキル/MCPは設定ファイルで管理する
-- `.claude/skills` にスキルを置くだけで再利用できる土台にする
+Design goals:
+- The Python layer handles **only** chat UI and SDK connectivity
+- Agents, skills, and MCP servers are managed through configuration files
+- Adding a skill is as simple as placing it under `.claude/skills`
 
 ## Features
 
-- Streamlit ベースの最小チャットUI
-- Claude Agent SDK のストリーミング応答
-- `.claude/agents` / `.claude/skills` でエージェント・スキル管理
-- `.mcp.json` による MCP サーバー設定
+- Minimal Streamlit-based chat UI
+- Claude Agent SDK streaming responses with real-time tool activity display
+- Agent and skill management via `.claude/agents` / `.claude/skills`
+- MCP server configuration via `.mcp.json`
+- Output sanitization (redacts API keys and system paths)
+- IME composition fix for Safari / Chrome (Japanese input support)
+- Subscription authentication support (`claude login`)
 
 ## Requirements
 
-- Python 3.12 以上
+- Python 3.12+
+- Claude Agent SDK 0.1.35+
 
 ## Project Structure
 
 ```text
 claude-agent-app-template/
-├── app.py
-├── requirements.txt
-├── requirements-dev.txt
-├── pyproject.toml
-├── .pre-commit-config.yaml
-├── .env.example
-├── .mcp.json
+├── app.py                        # Streamlit UI (entry point)
+├── agent/
+│   ├── __init__.py               # SDK patch auto-apply
+│   ├── async_bridge.py           # Async-to-sync bridge for Streamlit
+│   ├── client.py                 # ClaudeChatAgent (SDK wrapper)
+│   ├── sanitizer.py              # Output sanitizer (secrets & paths)
+│   └── _sdk_patch.py             # Monkey-patch for unknown SDK events
+├── config/
+│   └── settings.py               # Environment variables and constants
+├── tests/
+│   ├── test_app.py
+│   ├── test_async_bridge.py
+│   ├── test_client.py
+│   ├── test_sdk_patch.py
+│   └── test_settings.py
+├── scripts/                      # User-generated scripts (via chat)
 ├── .claude/
-│   ├── settings.json
+│   ├── settings.json             # Project-level permission rules
 │   ├── agents/
 │   │   └── general-chat-assistant.md
 │   └── skills/
@@ -38,11 +51,13 @@ claude-agent-app-template/
 │           ├── SKILL.md
 │           └── references/
 │               └── quick-start.md
-├── agent/
-│   ├── async_bridge.py
-│   └── client.py
-└── config/
-    └── settings.py
+├── .env.example
+├── .mcp.json
+├── requirements.txt
+├── requirements-dev.txt
+├── pyproject.toml
+├── .pre-commit-config.yaml
+└── CLAUDE.md
 ```
 
 ## Quick Start
@@ -53,38 +68,52 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
-cp .env.example .env
+cp .env.example .env              # Set ANTHROPIC_API_KEY or use `claude login`
 pre-commit install
 pre-commit run --all-files
 python -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
+## Authentication
+
+Two authentication methods are supported:
+
+| Method | Setup | `.env` setting |
+|---|---|---|
+| API Key | Set `ANTHROPIC_API_KEY` in `.env` | `CLAUDE_AUTH_MODE=api_key` (or omit) |
+| Subscription (OAuth) | Run `claude login` in terminal | `CLAUDE_AUTH_MODE=subscription` |
+
+When `CLAUDE_AUTH_MODE=auto` (default), the app tries the API key first and falls back to subscription.
+
 ## Configuration
 
 ### 1) Environment Variables (`.env`)
 
-- `ANTHROPIC_API_KEY`: 必須
-- `CLAUDE_MODEL`: 例 `claude-sonnet-4-5-20250929`
-- `CLAUDE_PERMISSION_MODE`: 例 `default` / `acceptEdits` / `bypassPermissions`
-- `CLAUDE_SETTING_SOURCES`: 例 `project,local`
-- `CLAUDE_MAX_RETRIES`: SDK接続/問い合わせ失敗時の再試行回数
-- `CLAUDE_RETRY_BACKOFF_SECONDS`: 再試行間の待機秒数（線形バックオフ）
+| Variable | Description | Default |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | API key (leave empty if using subscription) | — |
+| `CLAUDE_MODEL` | Model name | `claude-sonnet-4-5-20250929` |
+| `CLAUDE_AUTH_MODE` | `auto` / `api_key` / `subscription` | `auto` |
+| `CLAUDE_PERMISSION_MODE` | `default` / `acceptEdits` / `bypassPermissions` | `default` |
+| `CLAUDE_SETTING_SOURCES` | Settings sources | `project,local` |
+| `CLAUDE_MAX_RETRIES` | Retry count on connection/query failure | `2` |
+| `CLAUDE_RETRY_BACKOFF_SECONDS` | Wait time between retries (linear backoff) | `0.5` |
 
-### 2) Agent/Skill Settings (`.claude`)
+### 2) Agent / Skill Settings (`.claude`)
 
-- エージェント: `.claude/agents/*.md`
-- スキル: `.claude/skills/<skill-name>/SKILL.md`
-- プロジェクト設定: `.claude/settings.json`
+- **Agents**: `.claude/agents/*.md` — frontmatter + system prompt
+- **Skills**: `.claude/skills/<skill-name>/SKILL.md` — skill definition with optional `references/`
+- **Permissions**: `.claude/settings.json` — allow/deny rules for tools and file access
 
-スキル追加方法:
-1. `.claude/skills` 配下にフォルダ作成
-2. `SKILL.md` を追加
-3. 必要なら `references/` を追加
+To add a new skill:
+1. Create a folder under `.claude/skills/`
+2. Add a `SKILL.md` file
+3. Optionally add `references/` for domain knowledge
 
 ### 3) MCP Settings (`.mcp.json`)
 
-`mcpServers` に MCP サーバーを定義します。例:
+Define MCP servers under the `mcpServers` key:
 
 ```json
 {
@@ -97,6 +126,21 @@ streamlit run app.py
   }
 }
 ```
+
+## Security
+
+- **Permission rules** in `.claude/settings.json` restrict filesystem access, Bash commands, and tool use
+- `Bash(python -c *)` / `Bash(python3 -c *)` are explicitly denied to block arbitrary Python one-liners
+- **Output sanitization** (`agent/sanitizer.py`) redacts API keys and absolute paths from responses
+- Output sanitization is a display-layer safeguard; it does not replace permission controls
+- **System prompt restrictions** prevent the agent from accessing `.env`, credentials, or navigating outside the project
+- See `CLAUDE.md` for the full security policy
+
+## Scripts Policy
+
+- `scripts/` is for local helper scripts only
+- Only `scripts/.gitkeep` is tracked in Git
+- Do not commit temporary security/debug scripts
 
 ## Testing
 
@@ -111,7 +155,7 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-`git commit` 時に以下が自動実行されます。
+The following checks run automatically on `git commit`:
 - `ruff check --fix`
 - `ruff format`
 - `mypy --config-file pyproject.toml`

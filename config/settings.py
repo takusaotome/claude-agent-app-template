@@ -8,7 +8,15 @@ from typing import Literal, cast
 
 from dotenv import load_dotenv
 
-load_dotenv()
+
+def _load_dotenv_if_enabled() -> None:
+    flag = os.getenv("PYTHON_DOTENV_DISABLED", "").strip().lower()
+    if flag in {"1", "true", "yes"}:
+        return
+    load_dotenv()
+
+
+_load_dotenv_if_enabled()
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CLAUDE_DIR = PROJECT_ROOT / ".claude"
@@ -19,7 +27,7 @@ APP_ICON = "🤖"
 
 PermissionMode = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
 SettingSource = Literal["user", "project", "local"]
-AuthMode = Literal["auto", "api_key"]
+AuthMode = Literal["auto", "api_key", "subscription"]
 
 
 def _parse_permission_mode(raw: str) -> PermissionMode:
@@ -38,7 +46,7 @@ def _parse_setting_sources(raw: str) -> list[SettingSource]:
 
 
 def _parse_auth_mode(raw: str) -> AuthMode:
-    if raw in {"auto", "api_key"}:
+    if raw in {"auto", "api_key", "subscription"}:
         return cast(AuthMode, raw)
     return "auto"
 
@@ -85,6 +93,11 @@ def validate_runtime_environment() -> list[str]:
     errors: list[str] = []
     if AUTH_MODE == "api_key" and not ANTHROPIC_API_KEY:
         errors.append("ANTHROPIC_API_KEY is not set. Add it to .env before sending chat requests.")
+    elif AUTH_MODE == "subscription" and not HAS_CLI_SUBSCRIPTION:
+        errors.append(
+            "Claude subscription auth is not configured. Run `claude login`, "
+            "or use CLAUDE_AUTH_MODE=api_key with ANTHROPIC_API_KEY."
+        )
     elif AUTH_MODE == "auto" and not ANTHROPIC_API_KEY and not HAS_CLI_SUBSCRIPTION:
         errors.append(
             "No authentication found. Either set ANTHROPIC_API_KEY in .env, "

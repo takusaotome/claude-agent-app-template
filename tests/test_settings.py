@@ -14,7 +14,8 @@ class SettingsTests(unittest.TestCase):
     """Validates env var parsing and runtime validation."""
 
     def _reload_settings(self):
-        return importlib.reload(settings_module)
+        with patch.dict(os.environ, {"PYTHON_DOTENV_DISABLED": "1"}, clear=False):
+            return importlib.reload(settings_module)
 
     def test_validation_reports_missing_api_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -127,3 +128,14 @@ class SettingsTests(unittest.TestCase):
 
         self.assertTrue(errors)
         self.assertIn("ANTHROPIC_API_KEY", errors[0])
+
+    def test_validation_fails_in_subscription_mode_when_not_logged_in(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = self._reload_settings()
+            settings.ANTHROPIC_API_KEY = ""
+            settings.HAS_CLI_SUBSCRIPTION = False
+            settings.AUTH_MODE = "subscription"
+            errors = settings.validate_runtime_environment()
+
+        self.assertTrue(errors)
+        self.assertIn("claude login", errors[0])

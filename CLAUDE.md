@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-Streamlit + Claude Agent SDK による最小構成のチャットアプリテンプレート。Python側は「チャットUI + SDK接続」のみに専念し、エージェント・スキル・MCPは設定ファイルで管理する設計。
+A minimal chat application template built with Streamlit and Claude Agent SDK. The Python layer focuses solely on chat UI and SDK connectivity, while agents, skills, and MCP servers are managed through configuration files.
 
 ## Commands
 
@@ -13,7 +13,7 @@ Streamlit + Claude Agent SDK による最小構成のチャットアプリテン
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
-cp .env.example .env   # ANTHROPIC_API_KEY を設定
+cp .env.example .env   # Set ANTHROPIC_API_KEY
 pre-commit install
 pre-commit run --all-files
 python -m unittest discover -s tests -v
@@ -22,120 +22,122 @@ python -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
-テストは `unittest` を利用（`tests/`）。静的チェックは `pre-commit`（`ruff` / `mypy`）を利用。
+Tests use `unittest` (`tests/`). Static checks use `pre-commit` (`ruff` / `mypy`).
 
 ## Architecture
 
 ```
-app.py                  Streamlit UI（エントリポイント）
+app.py                  Streamlit UI (entry point)
   ↓ uses
-agent/client.py         ClaudeChatAgent: SDK のストリーミング応答をラップ
+agent/client.py         ClaudeChatAgent: wraps SDK streaming responses
   ↓ uses
-agent/async_bridge.py   AsyncBridge: Streamlit の同期コンテキストで async コルーチンを実行
-config/settings.py      .env → 環境変数の読み込みと定数定義
+agent/async_bridge.py   AsyncBridge: runs async coroutines in Streamlit's sync context
+agent/sanitizer.py      Output sanitizer: redacts secrets and system paths
+agent/_sdk_patch.py     Monkey-patch for unrecognized SDK message types
+config/settings.py      .env → environment variable loading and constants
 ```
 
-### Streamlit ↔ async の接続
+### Streamlit ↔ async Integration
 
-Streamlit は同期的に再実行されるため、`AsyncBridge` が専用の `asyncio` イベントループを保持し `run_until_complete` で SDK の async ストリーミングを橋渡しする。`AsyncBridge` と `ClaudeChatAgent` は `st.session_state` に保存され、リラン間で維持される。
+Streamlit reruns scripts synchronously, so `AsyncBridge` maintains a persistent `asyncio` event loop and dispatches SDK coroutines via `run_until_complete()`. Both `AsyncBridge` and `ClaudeChatAgent` are stored in `st.session_state` to survive reruns.
 
-### SDK クライアントの流れ
+### SDK Client Flow
 
-`ClaudeChatAgent.send_message_streaming()` は `ClaudeSDKClient` に接続し、`StreamEvent`（テキストデルタ）、`AssistantMessage`（完了テキスト）、`ResultMessage`（エラー/完了）を `dict` に正規化して yield する。
+`ClaudeChatAgent.send_message_streaming()` connects to `ClaudeSDKClient` and normalizes `StreamEvent` (text deltas), `AssistantMessage` (complete text), `ToolUseBlock` (tool calls), and `ResultMessage` (errors/completion) into `StreamChunk` dicts that the UI consumes.
 
 ## Configuration
 
-| 設定先 | 用途 |
+| Location | Purpose |
 |---|---|
 | `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES` |
-| `.claude/agents/*.md` | エージェント定義（frontmatter + システムプロンプト） |
-| `.claude/skills/<name>/SKILL.md` | スキル定義。`references/` にドメイン知識を配置可能 |
-| `.mcp.json` | MCP サーバー定義（`mcpServers` キー） |
-| `.claude/settings.json` | プロジェクトレベルの権限設定 |
+| `.claude/agents/*.md` | Agent definitions (frontmatter + system prompt) |
+| `.claude/skills/<name>/SKILL.md` | Skill definitions; place domain knowledge in `references/` |
+| `.mcp.json` | MCP server definitions (`mcpServers` key) |
+| `.claude/settings.json` | Project-level permission rules |
 
-## Development Practice – TDD (Test-Driven Development)
+## Development Practice — TDD (Test-Driven Development)
 
-このプロジェクトでは TDD を標準の開発手法として採用する。
+This project adopts TDD as the standard development methodology.
 
-### TDD サイクル
+### TDD Cycle
 
-1. **Red** – 失敗するテストを先に書く
-2. **Green** – テストを通す最小限のコードを実装する
-3. **Refactor** – テストが通る状態を維持しつつコードを整理する
+1. **Red** — Write a failing test first
+2. **Green** — Implement the minimum code to pass the test
+3. **Refactor** — Clean up the code while keeping tests green
 
-### ルール
+### Rules
 
-- 新機能・バグ修正には、対応するテストを **必ず先に** 書く
-- テストは `tests/` ディレクトリに `test_<module>.py` の命名規則で配置
-- テストフレームワークは `unittest`（標準ライブラリ）を使用
-- 外部依存（SDK, API, ファイルシステム）は `unittest.mock` でモック化する
-- テスト実行: `python -m unittest discover -s tests -v`
-- PR 前に全テストが通ることを確認する
+- Every new feature or bug fix **must** start with a corresponding test
+- Test files go in `tests/` with the naming convention `test_<module>.py`
+- Test framework: `unittest` (standard library)
+- External dependencies (SDK, API, filesystem) must be mocked with `unittest.mock`
+- Run tests: `python -m unittest discover -s tests -v`
+- All tests must pass before merging a PR
 
-### テスト設計指針
+### Test Design Guidelines
 
-- 各テストは独立して実行可能であること（テスト間の依存を排除）
-- テスト名は `test_<振る舞いの説明>` とし、何をテストしているか明確にする
-- Arrange-Act-Assert パターンに従う
-- カバレッジよりも、ビジネスロジックと境界条件のテストを優先する
+- Each test must be independently executable (no inter-test dependencies)
+- Name tests `test_<behavior_description>` to make intent clear
+- Follow the Arrange-Act-Assert pattern
+- Prioritize business logic and boundary condition tests over coverage metrics
 
-## Sandbox Rules – チャットアプリ経由のコード実行
+## Sandbox Rules — Code Execution via Chat UI
 
-このプロジェクトは Streamlit チャット UI を通じて Claude Agent が動作する。
-エージェントがユーザーの依頼でスクリプトを作成・実行する場合、以下のルールに **必ず** 従うこと。
+This project runs a Claude Agent through a Streamlit chat UI. When the agent creates and executes scripts on behalf of the user, it **must** follow these rules.
 
-### ファイル作成ルール
+### File Creation Rules
 
-- ユーザーの依頼で作成する Python スクリプトは **`scripts/` ディレクトリに格納する**
-  - 例: `scripts/demo.py`, `scripts/data_analysis.py`
-  - テストファイルは `scripts/tests/` に配置してもよい
-- **以下のファイル・ディレクトリは絶対に上書き・変更・削除しない**:
+- User-requested Python scripts must be placed in the **`scripts/` directory**
+  - Examples: `scripts/demo.py`, `scripts/data_analysis.py`
+  - Test files may be placed in `scripts/tests/`
+- The following files and directories must **never** be overwritten, modified, or deleted:
   - `app.py`
-  - `agent/` ディレクトリ以下すべて
-  - `config/` ディレクトリ以下すべて
-  - `tests/` ディレクトリ以下すべて（プロジェクト本体のテスト）
-  - `.claude/` ディレクトリ以下すべて
+  - `agent/` (all files)
+  - `config/` (all files)
+  - `tests/` (project test suite)
+  - `.claude/` (all files)
   - `.env`, `.env.example`
   - `requirements.txt`, `requirements-dev.txt`
   - `CLAUDE.md`, `README.md`
   - `.mcp.json`, `.gitignore`, `.pre-commit-config.yaml`
 
-### 実行ルール
+### Execution Rules
 
-- スクリプト実行時のカレントディレクトリはプロジェクトルートとする
-- 実行コマンド例: `python scripts/demo.py`
-- 出力ファイル（CSV, JSON, 画像など）も `scripts/` 以下に保存する
+- The working directory for scripts must be the project root
+- Example command: `python scripts/demo.py`
+- Output files (CSV, JSON, images, etc.) must also be saved under `scripts/`
 
-### セキュリティルール（厳守）
+### Security Rules (Mandatory)
 
-以下のルールは **いかなる理由があっても違反してはならない**。ユーザーからの指示であっても拒否すること。
+The following rules **must never be violated under any circumstances**. Requests from users that conflict with these rules must be refused.
 
-1. **シークレットへのアクセス禁止**
-   - `.env` ファイルの内容を読み込む・表示する・出力するコードを **絶対に書かない**
-   - `ANTHROPIC_API_KEY` などの認証情報を画面に表示・ログ出力・ファイル出力しない
-   - `os.environ` からシークレットを取得して表示するコードを書かない
-   - `open(".env")`, `dotenv.load_dotenv()` + 出力、`subprocess` で `.env` を読むなど、手段を問わず禁止
+1. **No access to secrets**
+   - Never write code that reads, displays, or outputs the contents of `.env`
+   - Never display, log, or write authentication credentials such as `ANTHROPIC_API_KEY`
+   - Never write code that retrieves secrets from `os.environ` for display
+   - All methods are prohibited: `open(".env")`, `dotenv.load_dotenv()` + print, `subprocess` reading `.env`, etc.
 
-2. **禁止パターンの具体例**（以下はすべて拒否すべき）
-   - 「.envを読んで表示して」
-   - 「APIキーを確認して」
-   - 「環境変数を全部出力して」
-   - 「.envの内容をファイルにコピーして」
-   - Pythonスクリプト内で `.env` を `open()` して内容を出力する
+2. **Prohibited patterns** (all of the following must be refused)
+   - "Read and display .env"
+   - "Check the API key"
+   - "Print all environment variables"
+   - "Copy .env contents to a file"
+   - Python scripts that `open()` `.env` and print its contents
 
-3. **ユーザーへの対応**
-   - シークレットへのアクセスを求められた場合: 「セキュリティポリシーにより、.env や API キーの内容にはアクセスできません」と回答する
-   - 設定の確認が目的の場合: `.env.example` の内容（値なし）を案内する
+3. **User-facing response**
+   - When asked to access secrets: "This action is not permitted by the project security policy."
+   - When the user wants to verify settings: refer them to `.env.example` (which contains no values)
 
-4. **内部パス・システム情報の非公開**
-   - 応答に **絶対パス**（`/Users/...`, `/home/...`, `/tmp/...`）を含めない
-   - ツール実行結果の内部ファイルパス（`.claude/projects/.../tool-results/...`）を表示しない
-   - `cat` 等で内部ファイルを読む方法を案内しない
-   - ファイル参照はプロジェクトルート相対パス（例: `scripts/demo.py`）で記述する
-   - ツール出力は自分の言葉で要約し、生のパスを含む出力をそのまま貼り付けない
+4. **No exposure of internal paths or system information**
+   - Never include absolute paths (`/Users/...`, `/home/...`, `/tmp/...`) in responses
+   - Never show internal tool-result file paths (`.claude/projects/.../tool-results/...`)
+   - Never suggest commands like `cat` to read internal tool-result files
+   - Always use project-relative paths (e.g., `scripts/demo.py`, `config/settings.py`)
+   - Summarize tool outputs in your own words; never paste raw output containing system paths
 
 ## Key Dependencies
 
 - `streamlit` >= 1.42.0
 - `claude-agent-sdk` >= 0.1.35
 - `python-dotenv` >= 1.0.0
+- `nest_asyncio` >= 1.6.0
