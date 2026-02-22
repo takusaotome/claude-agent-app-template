@@ -12,7 +12,6 @@ from agent.sanitizer import sanitize
 from config.settings import (
     APP_ICON,
     APP_TITLE,
-    CLAUDE_DIR,
     PROJECT_ROOT,
     get_auth_description,
     validate_runtime_environment,
@@ -77,7 +76,7 @@ async def _stream_response(
             status_placeholder.status(f"\U0001f527 {label}...", state="running")
 
         elif ctype == "tool_result":
-            status_placeholder.status("\u2705 完了", state="complete")
+            status_placeholder.status("考え中...", state="running")
 
     if not final_text_parts:
         final_text_parts.append("(No response)")
@@ -97,6 +96,8 @@ _CUSTOM_CSS = """
 [data-testid="stChatMessage"] p { margin-bottom: 0.4em !important; }
 /* Reduce top padding for cleaner initial look */
 .stMainBlockContainer { padding-top: 1.5rem !important; }
+/* Hide the running-man status icon in top-right corner */
+[data-testid="stStatusWidget"] { display: none !important; }
 </style>
 """
 st.markdown(_CUSTOM_CSS, unsafe_allow_html=True)
@@ -188,8 +189,7 @@ if "agent" not in st.session_state:
 
 with st.sidebar:
     st.subheader("Project Config")
-    st.caption(f"Project: `{PROJECT_ROOT}`")
-    st.caption(f"Claude config: `{CLAUDE_DIR}`")
+    st.caption(f"Project: `{PROJECT_ROOT.name}`")
     st.caption(f"Auth: `{get_auth_description()}`")
 
     if st.button("Clear chat", use_container_width=True):

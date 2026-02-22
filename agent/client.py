@@ -76,7 +76,7 @@ class ClaudeChatAgent:
             setting_sources=SETTING_SOURCES,
             include_partial_messages=True,
             mcp_servers=mcp_config,
-            sandbox={"enabled": True, "autoAllowBashIfSandboxed": True},
+            sandbox={"enabled": False},
         )
 
     async def connect(self) -> None:
