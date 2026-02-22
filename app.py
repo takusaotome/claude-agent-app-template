@@ -7,7 +7,8 @@ from typing import Any
 
 import streamlit as st
 from agent.async_bridge import AsyncBridge
-from agent.client import ClaudeChatAgent, StreamChunk
+from agent.client import ClaudeChatAgent
+from agent.sanitizer import sanitize
 from config.settings import (
     APP_ICON,
     APP_TITLE,
@@ -21,8 +22,28 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 
-def _apply_stream_chunk(final_text_parts: list[str], chunk: StreamChunk) -> bool:
-    """Append a normalized stream chunk to the render buffer."""
+_TOOL_LABELS: dict[str, str] = {
+    "Write": "ファイル作成中",
+    "Edit": "ファイル編集中",
+    "Read": "ファイル読み込み中",
+    "Bash": "コマンド実行中",
+    "Grep": "コード検索中",
+    "Glob": "ファイル検索中",
+    "LS": "ディレクトリ一覧取得中",
+    "WebFetch": "Web取得中",
+    "TodoRead": "タスク確認中",
+    "TodoWrite": "タスク更新中",
+}
+
+
+def _tool_status_label(tool_name: str) -> str:
+    """Convert an SDK tool name to a user-friendly Japanese label."""
+    short = tool_name.split("__")[-1] if "__" in tool_name else tool_name
+    return _TOOL_LABELS.get(short, short)
+
+
+def _apply_stream_chunk(final_text_parts: list[str], chunk: dict[str, str]) -> bool:
+    """Append text/error chunks to the assistant response buffer."""
     ctype = chunk.get("type")
     content = chunk.get("content", "")
     if ctype in {"text_delta", "text"} and content:
@@ -44,15 +65,25 @@ async def _stream_response(
     final_text_parts: list[str] = []
 
     async for chunk in agent.send_message_streaming(prompt):
-        if _apply_stream_chunk(final_text_parts, chunk):
+        ctype = chunk.get("type")
+        content = sanitize(chunk.get("content", ""))
+
+        if _apply_stream_chunk(final_text_parts, {"type": ctype or "", "content": content}):
             status_placeholder.empty()
-            response_placeholder.markdown("".join(final_text_parts) + " \u258c")
+            response_placeholder.markdown(sanitize("".join(final_text_parts)) + " \u258c")
+
+        elif ctype == "tool_use":
+            label = _tool_status_label(content)
+            status_placeholder.status(f"\U0001f527 {label}...", state="running")
+
+        elif ctype == "tool_result":
+            status_placeholder.status("\u2705 完了", state="complete")
 
     if not final_text_parts:
         final_text_parts.append("(No response)")
 
     status_placeholder.empty()
-    return "".join(final_text_parts)
+    return sanitize("".join(final_text_parts))
 
 
 st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout="wide")

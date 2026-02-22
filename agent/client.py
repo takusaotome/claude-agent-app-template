@@ -13,9 +13,12 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    SystemMessage,
     TextBlock,
+    ToolUseBlock,
+    UserMessage,
 )
-from claude_agent_sdk.types import StreamEvent
+from claude_agent_sdk.types import StreamEvent, ToolResultBlock
 from config.settings import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MODEL,
@@ -32,7 +35,7 @@ logger = logging.getLogger(__name__)
 class StreamChunk(TypedDict):
     """Normalized stream payload consumed by the Streamlit UI."""
 
-    type: Literal["text_delta", "text", "error", "done"]
+    type: Literal["text_delta", "text", "tool_use", "tool_result", "error", "done"]
     content: NotRequired[str]
 
 
@@ -73,6 +76,7 @@ class ClaudeChatAgent:
             setting_sources=SETTING_SOURCES,
             include_partial_messages=True,
             mcp_servers=mcp_config,
+            sandbox={"enabled": True, "autoAllowBashIfSandboxed": True},
         )
 
     async def connect(self) -> None:
@@ -128,29 +132,42 @@ class ClaudeChatAgent:
                             if text:
                                 emitted_delta = True
                                 yield {"type": "text_delta", "content": text}
-                    elif event_type not in (
-                        "message_start",
-                        "message_delta",
-                        "message_stop",
-                        "content_block_start",
-                        "content_block_stop",
-                        "ping",
-                        "rate_limit_event",
-                    ):
-                        logger.debug("Ignored StreamEvent type: %s", event_type)
+                    elif event_type == "content_block_start":
+                        block = event.get("content_block", {})
+                        if block.get("type") == "tool_use":
+                            tool_name = block.get("name", "unknown")
+                            yield {"type": "tool_use", "content": tool_name}
 
                 elif isinstance(message, AssistantMessage):
-                    if emitted_delta:
-                        continue
                     for block in message.content:
                         if isinstance(block, TextBlock) and block.text:
-                            yield {"type": "text", "content": block.text}
+                            if not emitted_delta:
+                                yield {"type": "text", "content": block.text}
+                        elif isinstance(block, ToolUseBlock):
+                            yield {"type": "tool_use", "content": block.name}
+
+                elif isinstance(message, UserMessage):
+                    if isinstance(message.content, list):
+                        for block in message.content:
+                            if isinstance(block, ToolResultBlock):
+                                is_err = block.is_error or False
+                                yield {
+                                    "type": "tool_result",
+                                    "content": "error" if is_err else "success",
+                                }
 
                 elif isinstance(message, ResultMessage):
                     if message.is_error:
                         yield {"type": "error", "content": message.result or "Unknown error"}
                     else:
                         yield {"type": "done", "content": message.session_id}
+
+                elif isinstance(message, (SystemMessage,)):
+                    subtype = getattr(message, "subtype", "?")
+                    logger.debug(
+                        "Ignored system message: subtype=%s",
+                        subtype,
+                    )
 
                 else:
                     logger.debug("Ignored unknown message class: %s", type(message).__name__)
