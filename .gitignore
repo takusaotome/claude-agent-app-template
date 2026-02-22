@@ -3,3 +3,15 @@ __pycache__/
 *.pyc
 .streamlit/
 .DS_Store
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+
+# User-generated scripts (keep .gitkeep only)
+scripts/*
+!scripts/.gitkeep

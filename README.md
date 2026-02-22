@@ -14,12 +14,19 @@ Claude Agent SDK + Streamlit の最小チャットアプリテンプレートで
 - `.claude/agents` / `.claude/skills` でエージェント・スキル管理
 - `.mcp.json` による MCP サーバー設定
 
+## Requirements
+
+- Python 3.12 以上
+
 ## Project Structure
 
 ```text
 claude-agent-app-template/
 ├── app.py
 ├── requirements.txt
+├── requirements-dev.txt
+├── pyproject.toml
+├── .pre-commit-config.yaml
 ├── .env.example
 ├── .mcp.json
 ├── .claude/
@@ -45,7 +52,11 @@ cd claude-agent-app-template
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
+pre-commit install
+pre-commit run --all-files
+python -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
@@ -55,8 +66,10 @@ streamlit run app.py
 
 - `ANTHROPIC_API_KEY`: 必須
 - `CLAUDE_MODEL`: 例 `claude-sonnet-4-5-20250929`
-- `CLAUDE_PERMISSION_MODE`: 例 `acceptEdits` / `bypassPermissions`
+- `CLAUDE_PERMISSION_MODE`: 例 `default` / `acceptEdits` / `bypassPermissions`
 - `CLAUDE_SETTING_SOURCES`: 例 `project,local`
+- `CLAUDE_MAX_RETRIES`: SDK接続/問い合わせ失敗時の再試行回数
+- `CLAUDE_RETRY_BACKOFF_SECONDS`: 再試行間の待機秒数（線形バックオフ）
 
 ### 2) Agent/Skill Settings (`.claude`)
 
@@ -84,3 +97,21 @@ streamlit run app.py
   }
 }
 ```
+
+## Testing
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## Quality Gate (Ruff / Mypy / pre-commit)
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
+`git commit` 時に以下が自動実行されます。
+- `ruff check --fix`
+- `ruff format`
+- `mypy --config-file pyproject.toml`

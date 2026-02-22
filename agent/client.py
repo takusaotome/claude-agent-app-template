@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any, Literal, NotRequired, TypedDict
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -13,13 +16,24 @@ from claude_agent_sdk import (
     TextBlock,
 )
 from claude_agent_sdk.types import StreamEvent
-
 from config.settings import (
+    DEFAULT_MAX_RETRIES,
     DEFAULT_MODEL,
     DEFAULT_PERMISSION_MODE,
+    DEFAULT_RETRY_BACKOFF_SECONDS,
     MCP_CONFIG_PATH,
     SETTING_SOURCES,
+    PermissionMode,
 )
+
+logger = logging.getLogger(__name__)
+
+
+class StreamChunk(TypedDict):
+    """Normalized stream payload consumed by the Streamlit UI."""
+
+    type: Literal["text_delta", "text", "error", "done"]
+    content: NotRequired[str]
 
 
 class ClaudeChatAgent:
@@ -29,18 +43,28 @@ class ClaudeChatAgent:
         self,
         project_root: Path,
         model: str | None = None,
-        permission_mode: str | None = None,
+        permission_mode: PermissionMode | None = None,
+        max_retries: int | None = None,
+        retry_backoff_seconds: float | None = None,
     ) -> None:
         self.project_root = project_root
         self.model = model or DEFAULT_MODEL
         self.permission_mode = permission_mode or DEFAULT_PERMISSION_MODE
+        retries = DEFAULT_MAX_RETRIES if max_retries is None else max_retries
+        self.max_retries = max(0, retries)
+        self.retry_backoff_seconds = (
+            DEFAULT_RETRY_BACKOFF_SECONDS
+            if retry_backoff_seconds is None
+            else retry_backoff_seconds
+        )
         self._client: ClaudeSDKClient | None = None
         self._connected = False
 
     def _build_options(self) -> ClaudeAgentOptions:
-        mcp_config: dict | str = {}
+        """Build SDK options from local configuration."""
+        mcp_config: dict[str, Any] | str | Path = {}
         if MCP_CONFIG_PATH.exists():
-            mcp_config = str(MCP_CONFIG_PATH)
+            mcp_config = MCP_CONFIG_PATH
 
         return ClaudeAgentOptions(
             model=self.model,
@@ -52,43 +76,112 @@ class ClaudeChatAgent:
         )
 
     async def connect(self) -> None:
-        if self._connected:
+        """Initialize and connect the underlying SDK client."""
+        if self._connected and self._client is not None:
             return
+
         options = self._build_options()
         self._client = ClaudeSDKClient(options)
-        await self._client.connect()
+        try:
+            await self._client.connect()
+        except Exception:
+            self._client = None
+            self._connected = False
+            raise
+
         self._connected = True
 
     async def disconnect(self) -> None:
+        """Tear down the SDK client and reset local state."""
         if self._client and self._connected:
-            await self._client.disconnect()
+            try:
+                await self._client.disconnect()
+            except Exception:
+                logger.warning("Claude SDK disconnect failed", exc_info=True)
         self._client = None
         self._connected = False
 
-    async def send_message_streaming(self, user_message: str) -> AsyncIterator[dict]:
+    def _require_client(self) -> ClaudeSDKClient:
+        """Return a connected client or raise a clear runtime error."""
+        if self._client is None or not self._connected:
+            raise RuntimeError("Claude SDK client is not connected")
+        return self._client
+
+    async def _stream_once(self, user_message: str) -> AsyncIterator[StreamChunk]:
+        """Execute one query/stream cycle."""
         if not self._client or not self._connected:
             await self.connect()
 
-        assert self._client is not None
-        await self._client.query(user_message)
+        client = self._require_client()
+        await client.query(user_message)
+        emitted_delta = False
 
-        async for message in self._client.receive_response():
-            if isinstance(message, StreamEvent):
-                event = message.event
-                if event.get("type") == "content_block_delta":
-                    delta = event.get("delta", {})
-                    if delta.get("type") == "text_delta":
-                        text = delta.get("text", "")
-                        if text:
-                            yield {"type": "text_delta", "content": text}
+        async for message in client.receive_response():
+            try:
+                if isinstance(message, StreamEvent):
+                    event = message.event
+                    event_type = event.get("type", "")
+                    if event_type == "content_block_delta":
+                        delta = event.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text", "")
+                            if text:
+                                emitted_delta = True
+                                yield {"type": "text_delta", "content": text}
+                    elif event_type not in (
+                        "message_start",
+                        "message_delta",
+                        "message_stop",
+                        "content_block_start",
+                        "content_block_stop",
+                        "ping",
+                        "rate_limit_event",
+                    ):
+                        logger.debug("Ignored StreamEvent type: %s", event_type)
 
-            elif isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        yield {"type": "text", "content": block.text}
+                elif isinstance(message, AssistantMessage):
+                    if emitted_delta:
+                        continue
+                    for block in message.content:
+                        if isinstance(block, TextBlock) and block.text:
+                            yield {"type": "text", "content": block.text}
 
-            elif isinstance(message, ResultMessage):
-                if message.is_error:
-                    yield {"type": "error", "content": message.result or "Unknown error"}
+                elif isinstance(message, ResultMessage):
+                    if message.is_error:
+                        yield {"type": "error", "content": message.result or "Unknown error"}
+                    else:
+                        yield {"type": "done", "content": message.session_id}
+
                 else:
-                    yield {"type": "done", "content": message.session_id}
+                    logger.debug("Ignored unknown message class: %s", type(message).__name__)
+            except Exception as exc:
+                logger.warning("Skipping unhandled message: %s", exc)
+
+    async def send_message_streaming(self, user_message: str) -> AsyncIterator[StreamChunk]:
+        """Stream a response with bounded retry on transient SDK failures."""
+        last_error: Exception | None = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                async for chunk in self._stream_once(user_message):
+                    yield chunk
+                return
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Chat stream failed on attempt %s/%s: %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    exc,
+                )
+                await self.disconnect()
+
+                if attempt < self.max_retries:
+                    backoff = self.retry_backoff_seconds * (attempt + 1)
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
+
+        error_message = f"Request failed after {self.max_retries + 1} attempt(s)."
+        if last_error is not None:
+            error_message = f"{error_message} {last_error}"
+        yield {"type": "error", "content": error_message}
