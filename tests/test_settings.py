@@ -49,6 +49,22 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.DEFAULT_PERMISSION_MODE, "default")
 
+    def test_ui_locale_defaults_to_english(self) -> None:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "dummy"}, clear=True):
+            settings = self._reload_settings()
+
+        self.assertEqual(settings.UI_LOCALE, "en")
+
+    def test_ui_locale_accepts_japanese(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ANTHROPIC_API_KEY": "dummy", "APP_LOCALE": "ja"},
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        self.assertEqual(settings.UI_LOCALE, "ja")
+
     def test_custom_model_is_respected(self) -> None:
         with patch.dict(
             os.environ,

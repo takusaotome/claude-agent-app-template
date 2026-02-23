@@ -28,6 +28,7 @@ APP_ICON = "🤖"
 PermissionMode = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
 SettingSource = Literal["user", "project", "local"]
 AuthMode = Literal["auto", "api_key", "subscription"]
+UiLocale = Literal["en", "ja"]
 
 
 def _parse_permission_mode(raw: str) -> PermissionMode:
@@ -51,6 +52,12 @@ def _parse_auth_mode(raw: str) -> AuthMode:
     return "auto"
 
 
+def _parse_ui_locale(raw: str) -> UiLocale:
+    if raw in {"en", "ja"}:
+        return cast(UiLocale, raw)
+    return "en"
+
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 DEFAULT_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 DEFAULT_PERMISSION_MODE: PermissionMode = _parse_permission_mode(
@@ -63,6 +70,7 @@ SETTING_SOURCES = _parse_setting_sources(os.getenv("CLAUDE_SETTING_SOURCES", "pr
 
 
 AUTH_MODE: AuthMode = _parse_auth_mode(os.getenv("CLAUDE_AUTH_MODE", "auto").strip())
+UI_LOCALE: UiLocale = _parse_ui_locale(os.getenv("APP_LOCALE", "en").strip().lower())
 
 
 def _detect_cli_subscription() -> bool:

@@ -10,19 +10,23 @@ A minimal chat application template built with Streamlit and Claude Agent SDK. T
 
 ```bash
 # Setup
-python3 -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 cp .env.example .env   # Set ANTHROPIC_API_KEY
 pre-commit install
 pre-commit run --all-files
-python -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
 
 # Run
 streamlit run app.py
+
+# Container run
+docker compose up --build
 ```
 
 Tests use `unittest` (`tests/`). Static checks use `pre-commit` (`ruff` / `mypy`).
+Pre-commit hooks are configured as `language: system` and run the tools installed in the active virtual environment.
 
 ## Architecture
 
@@ -49,11 +53,12 @@ Streamlit reruns scripts synchronously, so `AsyncBridge` maintains a persistent 
 
 | Location | Purpose |
 |---|---|
-| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES` |
+| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_AUTH_MODE`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE` |
 | `.claude/agents/*.md` | Agent definitions (frontmatter + system prompt) |
 | `.claude/skills/<name>/SKILL.md` | Skill definitions; place domain knowledge in `references/` |
 | `.mcp.json` | MCP server definitions (`mcpServers` key) |
 | `.claude/settings.json` | Project-level permission rules |
+| `.github/workflows/ci.yml` | CI checks for lint/typecheck/tests |
 
 ## Development Practice — TDD (Test-Driven Development)
 
@@ -140,4 +145,3 @@ The following rules **must never be violated under any circumstances**. Requests
 - `streamlit` >= 1.42.0
 - `claude-agent-sdk` >= 0.1.35
 - `python-dotenv` >= 1.0.0
-- `nest_asyncio` >= 1.6.0

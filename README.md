@@ -16,11 +16,13 @@ Design goals:
 - Output sanitization (redacts API keys and system paths)
 - IME composition fix for Safari / Chrome (Japanese input support)
 - Subscription authentication support (`claude login`)
+- Bilingual UI (`APP_LOCALE=en|ja`)
 
 ## Requirements
 
 - Python 3.12+
 - Claude Agent SDK 0.1.35+
+- `requirements-dev.txt` tools installed in your active environment (`pre-commit`, `ruff`, `mypy`)
 
 ## Project Structure
 
@@ -40,6 +42,7 @@ claude-agent-app-template/
 │   ├── test_async_bridge.py
 │   ├── test_client.py
 │   ├── test_sdk_patch.py
+│   ├── test_sanitizer.py
 │   └── test_settings.py
 ├── scripts/                      # User-generated scripts (via chat)
 ├── .claude/
@@ -55,8 +58,12 @@ claude-agent-app-template/
 ├── .mcp.json
 ├── requirements.txt
 ├── requirements-dev.txt
+├── Dockerfile
+├── docker-compose.yml
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
+├── LICENSE
+├── .github/workflows/ci.yml
 └── CLAUDE.md
 ```
 
@@ -64,14 +71,14 @@ claude-agent-app-template/
 
 ```bash
 cd claude-agent-app-template
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 cp .env.example .env              # Set ANTHROPIC_API_KEY or use `claude login`
 pre-commit install
 pre-commit run --all-files
-python -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
 streamlit run app.py
 ```
 
@@ -99,6 +106,9 @@ When `CLAUDE_AUTH_MODE=auto` (default), the app tries the API key first and fall
 | `CLAUDE_SETTING_SOURCES` | Settings sources | `project,local` |
 | `CLAUDE_MAX_RETRIES` | Retry count on connection/query failure | `2` |
 | `CLAUDE_RETRY_BACKOFF_SECONDS` | Wait time between retries (linear backoff) | `0.5` |
+| `APP_LOCALE` | UI language (`en` / `ja`) | `en` |
+
+For non-interactive Streamlit usage, set `CLAUDE_PERMISSION_MODE=acceptEdits` only when your workflow requires automatic file edits.
 
 ### 2) Agent / Skill Settings (`.claude`)
 
@@ -131,6 +141,7 @@ Define MCP servers under the `mcpServers` key:
 
 - **Permission rules** in `.claude/settings.json` restrict filesystem access, Bash commands, and tool use
 - `Bash(python -c *)` / `Bash(python3 -c *)` are explicitly denied to block arbitrary Python one-liners
+- `pip*`, `python -m pip*`, and `WebFetch(*)` are denied by default (least-privilege baseline)
 - **Output sanitization** (`agent/sanitizer.py`) redacts API keys and absolute paths from responses
 - Output sanitization is a display-layer safeguard; it does not replace permission controls
 - **System prompt restrictions** prevent the agent from accessing `.env`, credentials, or navigating outside the project
@@ -142,10 +153,18 @@ Define MCP servers under the `mcpServers` key:
 - Only `scripts/.gitkeep` is tracked in Git
 - Do not commit temporary security/debug scripts
 
+## Container Run
+
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:8501`.
+
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -v
 ```
 
 ## Quality Gate (Ruff / Mypy / pre-commit)
@@ -159,3 +178,14 @@ The following checks run automatically on `git commit`:
 - `ruff check --fix`
 - `ruff format`
 - `mypy --config-file pyproject.toml`
+
+Hooks are configured with `language: system`, so they use tools already installed in the active virtual environment and do not create isolated hook environments.
+
+## CI
+
+- GitHub Actions workflow: `.github/workflows/ci.yml`
+- Runs `pre-commit run --all-files` and `unittest` on push / pull request
+
+## License
+
+This template is released under the MIT License. See `LICENSE`.

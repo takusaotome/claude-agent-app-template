@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from app import _apply_stream_chunk
+from app import _apply_stream_chunk, _msg, _tool_status_label
 
 
 class ApplyStreamChunkTests(unittest.TestCase):
@@ -51,3 +52,16 @@ class ApplyStreamChunkTests(unittest.TestCase):
         _apply_stream_chunk(parts, {"type": "text_delta", "content": "Hel"})
         _apply_stream_chunk(parts, {"type": "text_delta", "content": "lo"})
         self.assertEqual(parts, ["Hel", "lo"])
+
+    def test_tool_status_label_english(self) -> None:
+        with patch("app.UI_LOCALE", "en"):
+            self.assertEqual(_tool_status_label("Bash"), "Running command")
+            self.assertEqual(_tool_status_label("core__Write"), "Writing file")
+
+    def test_tool_status_label_japanese(self) -> None:
+        with patch("app.UI_LOCALE", "ja"):
+            self.assertEqual(_tool_status_label("Bash"), "コマンド実行")
+
+    def test_message_localization(self) -> None:
+        with patch("app.UI_LOCALE", "ja"):
+            self.assertEqual(_msg("clear_chat"), "チャットをクリア")

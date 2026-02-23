@@ -31,8 +31,8 @@ _RE_CLAUDE_INTERNAL = re.compile(r"\.claude/projects/[^\s`\"')\]}>,:;]+")
 def sanitize(text: str) -> str:
     """Redact secrets and system paths from agent output."""
     text = _RE_ANTHROPIC_KEY.sub("[REDACTED_API_KEY]", text)
-    text = _RE_LONG_TOKEN.sub("[REDACTED_TOKEN]", text)
     text = _RE_CLAUDE_INTERNAL.sub("[internal-path]", text)
+    text = _RE_LONG_TOKEN.sub("[REDACTED_TOKEN]", text)
     text = _RE_ABS_PATH.sub(_redact_abs_path, text)
     return text
 

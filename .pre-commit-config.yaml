@@ -4,18 +4,15 @@ repos:
       - id: ruff-check
         name: ruff check
         entry: ruff check --fix
-        language: python
+        language: system
         types_or: [python, pyi]
-        additional_dependencies: [ruff]
       - id: ruff-format
         name: ruff format
         entry: ruff format
-        language: python
+        language: system
         types_or: [python, pyi]
-        additional_dependencies: [ruff]
       - id: mypy
         name: mypy
         entry: mypy --config-file pyproject.toml
-        language: python
+        language: system
         pass_filenames: false
-        additional_dependencies: [mypy]
