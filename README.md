@@ -15,7 +15,7 @@ Design goals:
 - MCP server configuration via `.mcp.json`
 - Output sanitization (redacts API keys and system paths)
 - IME composition fix for Safari / Chrome (Japanese input support)
-- Subscription authentication support (`claude login`)
+- API key authentication (`ANTHROPIC_API_KEY`)
 - Bilingual UI (`APP_LOCALE=en|ja`)
 - Chat-input integrated attachments (`txt/md/csv/json`) with server-side persistence
 - `knowledge/*.md` lookup via `rg` at request time (no index)
@@ -88,7 +88,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
-cp .env.example .env              # Set ANTHROPIC_API_KEY or use `claude login`
+cp .env.example .env              # Set ANTHROPIC_API_KEY
 pre-commit install
 pre-commit run --all-files
 python3 -m unittest discover -s tests -v
@@ -97,14 +97,13 @@ streamlit run app.py
 
 ## Authentication
 
-Two authentication methods are supported:
+This template supports API key authentication for Claude Agent SDK.
 
-| Method | Setup | `.env` setting |
-|---|---|---|
-| API Key | Set `ANTHROPIC_API_KEY` in `.env` | `CLAUDE_AUTH_MODE=api_key` (or omit) |
-| Subscription (OAuth) | Run `claude login` in terminal | `CLAUDE_AUTH_MODE=subscription` |
+| Method | Setup |
+|---|---|
+| API Key | Set `ANTHROPIC_API_KEY` in `.env` |
 
-When `CLAUDE_AUTH_MODE=auto` (default), the app tries the API key first and falls back to subscription.
+`claude.ai` Subscription/OAuth login (`claude login`) is not supported for Agent SDK usage in this template.
 
 ## Configuration
 
@@ -112,9 +111,8 @@ When `CLAUDE_AUTH_MODE=auto` (default), the app tries the API key first and fall
 
 | Variable | Description | Default |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | API key (leave empty if using subscription) | — |
+| `ANTHROPIC_API_KEY` | API key used by Claude Agent SDK | — |
 | `CLAUDE_MODEL` | Model name | `claude-sonnet-4-5-20250929` |
-| `CLAUDE_AUTH_MODE` | `auto` / `api_key` / `subscription` | `auto` |
 | `CLAUDE_PERMISSION_MODE` | `default` / `acceptEdits` / `bypassPermissions` | `default` |
 | `CLAUDE_SETTING_SOURCES` | Settings sources | `project,local` |
 | `CLAUDE_MAX_RETRIES` | Retry count on connection/query failure | `2` |

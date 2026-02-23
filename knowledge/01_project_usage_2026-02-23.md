@@ -14,8 +14,8 @@ cp .env.example .env
 
 ## 2. Authentication
 
-- API key mode: set `ANTHROPIC_API_KEY` in `.env`
-- Subscription mode: run `claude login` in your terminal
+- Set `ANTHROPIC_API_KEY` in `.env`
+- This template uses API key authentication for Claude Agent SDK
 
 ## 3. Run the App
 

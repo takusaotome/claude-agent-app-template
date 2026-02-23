@@ -2,21 +2,20 @@
 
 This note explains common authentication setup and troubleshooting patterns.
 
-## How to choose authentication mode
+## Supported authentication
 
-- Use `CLAUDE_AUTH_MODE=api_key` when you have `ANTHROPIC_API_KEY`.
-- Use `CLAUDE_AUTH_MODE=subscription` when you logged in via `claude login`.
-- Use `CLAUDE_AUTH_MODE=auto` to try API key first, then subscription.
+This template supports Claude Agent SDK authentication via `ANTHROPIC_API_KEY`.
+Set the key in `.env` before starting Streamlit.
 
 ## Typical errors and fixes
 
-### Error: No authentication found
+### Error: ANTHROPIC_API_KEY is not set
 
-Cause: neither API key nor CLI subscription is available.
+Cause: API key is missing from runtime environment.
 
 Fix:
-1. Set `ANTHROPIC_API_KEY` in `.env`, or
-2. Run `claude login`.
+1. Set `ANTHROPIC_API_KEY` in `.env`.
+2. Restart the app process so the new environment value is loaded.
 
 ### Error: Request failed after retries
 
@@ -30,6 +29,6 @@ Fix:
 ## Recommended baseline
 
 For local development, keep:
-- `CLAUDE_AUTH_MODE=auto`
+- `ANTHROPIC_API_KEY=<your-key>`
 - `CLAUDE_MAX_RETRIES=2`
 - `CLAUDE_RETRY_BACKOFF_SECONDS=0.5`

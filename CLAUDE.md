@@ -62,7 +62,7 @@ Streamlit reruns scripts synchronously, so `AsyncBridge` maintains a persistent 
 
 | Location | Purpose |
 |---|---|
-| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_AUTH_MODE`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE`, `APP_LOG_FORMAT`, `APP_LOG_LEVEL`, `CLAUDE_SDK_SANDBOX_ENABLED`, attachment/knowledge/context settings |
+| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE`, `APP_LOG_FORMAT`, `APP_LOG_LEVEL`, `CLAUDE_SDK_SANDBOX_ENABLED`, attachment/knowledge/context settings |
 | `.claude/agents/*.md` | Agent definitions (frontmatter + system prompt) |
 | `.claude/skills/<name>/SKILL.md` | Skill definitions; place domain knowledge in `references/` |
 | `.mcp.json` | MCP server definitions (`mcpServers` key) |

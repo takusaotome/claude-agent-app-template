@@ -27,7 +27,6 @@ APP_ICON = "🤖"
 
 PermissionMode = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
 SettingSource = Literal["user", "project", "local"]
-AuthMode = Literal["auto", "api_key", "subscription"]
 UiLocale = Literal["en", "ja"]
 LogFormat = Literal["text", "json"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -46,12 +45,6 @@ def _parse_setting_sources(raw: str) -> list[SettingSource]:
         if normalized in {"user", "project", "local"}:
             parsed.append(cast(SettingSource, normalized))
     return parsed or ["project", "local"]
-
-
-def _parse_auth_mode(raw: str) -> AuthMode:
-    if raw in {"auto", "api_key", "subscription"}:
-        return cast(AuthMode, raw)
-    return "auto"
 
 
 def _parse_ui_locale(raw: str) -> UiLocale:
@@ -109,9 +102,6 @@ DEFAULT_MAX_RETRIES = int(os.getenv("CLAUDE_MAX_RETRIES", "2"))
 DEFAULT_RETRY_BACKOFF_SECONDS = float(os.getenv("CLAUDE_RETRY_BACKOFF_SECONDS", "0.5"))
 
 SETTING_SOURCES = _parse_setting_sources(os.getenv("CLAUDE_SETTING_SOURCES", "project,local"))
-
-
-AUTH_MODE: AuthMode = _parse_auth_mode(os.getenv("CLAUDE_AUTH_MODE", "auto").strip())
 UI_LOCALE: UiLocale = _parse_ui_locale(os.getenv("APP_LOCALE", "en").strip().lower())
 APP_LOG_FORMAT: LogFormat = _parse_log_format(os.getenv("APP_LOG_FORMAT", "text").strip().lower())
 APP_LOG_LEVEL: LogLevel = _parse_log_level(os.getenv("APP_LOG_LEVEL", "INFO").strip().upper())
@@ -143,43 +133,13 @@ CONTEXT_MAX_CHARS = _parse_positive_int(
 )
 
 
-def _detect_cli_subscription() -> bool:
-    """Check if Claude CLI has an active subscription login."""
-    import json
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["claude", "auth", "status"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            info = json.loads(result.stdout)
-            return info.get("loggedIn", False)
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
-        pass
-    return False
-
-
-HAS_CLI_SUBSCRIPTION = _detect_cli_subscription()
-
-
 def validate_runtime_environment() -> list[str]:
     """Return user-facing configuration errors that block chat requests."""
     errors: list[str] = []
-    if AUTH_MODE == "api_key" and not ANTHROPIC_API_KEY:
-        errors.append("ANTHROPIC_API_KEY is not set. Add it to .env before sending chat requests.")
-    elif AUTH_MODE == "subscription" and not HAS_CLI_SUBSCRIPTION:
+    if not ANTHROPIC_API_KEY:
         errors.append(
-            "Claude subscription auth is not configured. Run `claude login`, "
-            "or use CLAUDE_AUTH_MODE=api_key with ANTHROPIC_API_KEY."
-        )
-    elif AUTH_MODE == "auto" and not ANTHROPIC_API_KEY and not HAS_CLI_SUBSCRIPTION:
-        errors.append(
-            "No authentication found. Either set ANTHROPIC_API_KEY in .env, "
-            "or run `claude login` to use your Claude subscription."
+            "ANTHROPIC_API_KEY is not set. Claude Agent SDK in this template requires "
+            "API key authentication."
         )
     return errors
 
@@ -188,6 +148,4 @@ def get_auth_description() -> str:
     """Return a human-readable description of the active auth method."""
     if ANTHROPIC_API_KEY:
         return "API Key"
-    if HAS_CLI_SUBSCRIPTION:
-        return "Subscription (OAuth)"
     return "Not configured"

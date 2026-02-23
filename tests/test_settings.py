@@ -22,8 +22,6 @@ class SettingsTests(unittest.TestCase):
             settings = self._reload_settings()
             # Override values that load_dotenv may have restored from .env.
             settings.ANTHROPIC_API_KEY = ""
-            settings.HAS_CLI_SUBSCRIPTION = False
-            settings.AUTH_MODE = "auto"
             errors = settings.validate_runtime_environment()
 
         self.assertTrue(errors)
@@ -187,49 +185,31 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.get_auth_description(), "API Key")
 
-    def test_get_auth_description_with_subscription(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
-            settings = self._reload_settings()
-            settings.ANTHROPIC_API_KEY = ""
-            settings.HAS_CLI_SUBSCRIPTION = True
-
-        self.assertEqual(settings.get_auth_description(), "Subscription (OAuth)")
-
     def test_get_auth_description_not_configured(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             settings = self._reload_settings()
             settings.ANTHROPIC_API_KEY = ""
-            settings.HAS_CLI_SUBSCRIPTION = False
 
         self.assertEqual(settings.get_auth_description(), "Not configured")
 
-    def test_validation_passes_with_cli_subscription(self) -> None:
+    def test_validation_fails_without_api_key(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             settings = self._reload_settings()
             settings.ANTHROPIC_API_KEY = ""
-            settings.HAS_CLI_SUBSCRIPTION = True
-            settings.AUTH_MODE = "auto"
-            errors = settings.validate_runtime_environment()
-
-        self.assertEqual(errors, [])
-
-    def test_validation_fails_in_api_key_mode_without_key(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
-            settings = self._reload_settings()
-            settings.ANTHROPIC_API_KEY = ""
-            settings.AUTH_MODE = "api_key"
             errors = settings.validate_runtime_environment()
 
         self.assertTrue(errors)
         self.assertIn("ANTHROPIC_API_KEY", errors[0])
 
-    def test_validation_fails_in_subscription_mode_when_not_logged_in(self) -> None:
-        with patch.dict(os.environ, {}, clear=True):
+    def test_validation_ignores_subscription_auth_mode_env(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"CLAUDE_AUTH_MODE": "subscription"},
+            clear=True,
+        ):
             settings = self._reload_settings()
             settings.ANTHROPIC_API_KEY = ""
-            settings.HAS_CLI_SUBSCRIPTION = False
-            settings.AUTH_MODE = "subscription"
             errors = settings.validate_runtime_environment()
 
         self.assertTrue(errors)
-        self.assertIn("claude login", errors[0])
+        self.assertIn("ANTHROPIC_API_KEY", errors[0])
