@@ -104,6 +104,7 @@ This template supports API key authentication for Claude Agent SDK.
 | API Key | Set `ANTHROPIC_API_KEY` in `.env` |
 
 `claude.ai` Subscription/OAuth login (`claude login`) is not supported for Agent SDK usage in this template.
+If `CLAUDE_AUTH_MODE=subscription` or `auto` is set, the app shows a compliance warning and still requires `ANTHROPIC_API_KEY`.
 
 ## Configuration
 
@@ -129,6 +130,7 @@ This template supports API key authentication for Claude Agent SDK.
 | `KNOWLEDGE_DIR` | Knowledge folder path | `knowledge` |
 | `KNOWLEDGE_MAX_HITS` | Max `rg` line hits injected | `8` |
 | `CONTEXT_MAX_CHARS` | Total prompt context budget | `12000` |
+| `REQUESTS_PER_MINUTE_LIMIT` | Per-session message cap (simple rate limit) | `20` |
 
 For non-interactive Streamlit usage, set `CLAUDE_PERMISSION_MODE=acceptEdits` only when your workflow requires automatic file edits.
 

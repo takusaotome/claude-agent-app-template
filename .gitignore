@@ -14,6 +14,7 @@ build/
 .precommit-cache/
 
 # User-generated scripts (keep .gitkeep only)
+scripts/*.py
 scripts/*
 !scripts/.gitkeep
 

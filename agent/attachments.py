@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from agent.path_utils import is_within
+
 
 class UploadedFileLike(Protocol):
     """Minimal interface needed from Streamlit UploadedFile."""
@@ -84,14 +86,6 @@ def persist_attachments(
     return AttachmentPersistResult(attachments=attachments, warnings=warnings)
 
 
-def cleanup_session_uploads(*, project_root: Path, storage_dir: str, session_id: str) -> None:
-    """Delete one upload session directory if it exists."""
-    storage_root = resolve_storage_root(project_root=project_root, storage_dir=storage_dir)
-    session_dir = storage_root / _sanitize_session_id(session_id)
-    if session_dir.exists():
-        shutil.rmtree(session_dir)
-
-
 def cleanup_all_uploads(*, project_root: Path, storage_dir: str) -> None:
     """Delete all runtime upload artifacts under the storage directory."""
     storage_root = resolve_storage_root(project_root=project_root, storage_dir=storage_dir)
@@ -114,7 +108,7 @@ def resolve_storage_root(*, project_root: Path, storage_dir: str) -> Path:
     if not candidate.is_absolute():
         candidate = root / candidate
     resolved = candidate.resolve()
-    if not _is_within(resolved, root):
+    if not is_within(resolved, root):
         raise ValueError("Attachment storage directory must be inside the project root.")
     return resolved
 
@@ -156,7 +150,3 @@ def _next_available_path(directory: Path, filename: str) -> Path:
         if not candidate.exists():
             return candidate
         index += 1
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    return path == root or root in path.parents

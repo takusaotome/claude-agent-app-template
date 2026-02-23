@@ -113,6 +113,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.KNOWLEDGE_DIR, "knowledge")
         self.assertEqual(settings.KNOWLEDGE_MAX_HITS, 8)
         self.assertEqual(settings.CONTEXT_MAX_CHARS, 12000)
+        self.assertEqual(settings.REQUESTS_PER_MINUTE_LIMIT, 20)
 
     def test_context_related_settings_parse_custom_values(self) -> None:
         with patch.dict(
@@ -140,6 +141,19 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.KNOWLEDGE_DIR, "knowledge_custom")
         self.assertEqual(settings.KNOWLEDGE_MAX_HITS, 5)
         self.assertEqual(settings.CONTEXT_MAX_CHARS, 9000)
+
+    def test_requests_per_minute_limit_parses_custom_value(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "dummy",
+                "REQUESTS_PER_MINUTE_LIMIT": "12",
+            },
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        self.assertEqual(settings.REQUESTS_PER_MINUTE_LIMIT, 12)
 
     def test_custom_model_is_respected(self) -> None:
         with patch.dict(
@@ -213,3 +227,31 @@ class SettingsTests(unittest.TestCase):
 
         self.assertTrue(errors)
         self.assertIn("ANTHROPIC_API_KEY", errors[0])
+
+    def test_auth_compliance_warning_for_subscription_mode(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "dummy",
+                "CLAUDE_AUTH_MODE": "subscription",
+            },
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        warnings = settings.get_auth_compliance_warnings()
+        self.assertTrue(warnings)
+        self.assertIn("CLAUDE_AUTH_MODE", warnings[0])
+
+    def test_auth_compliance_warning_is_empty_for_api_key_mode(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "dummy",
+                "CLAUDE_AUTH_MODE": "api_key",
+            },
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        self.assertEqual(settings.get_auth_compliance_warnings(), [])

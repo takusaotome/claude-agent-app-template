@@ -8,7 +8,6 @@ from pathlib import Path
 
 from agent.attachments import (
     cleanup_all_uploads,
-    cleanup_session_uploads,
     persist_attachments,
     resolve_storage_root,
 )
@@ -106,28 +105,6 @@ class AttachmentTests(unittest.TestCase):
             self.assertNotEqual(rel_paths[0], rel_paths[1])
             self.assertEqual((root / rel_paths[0]).read_bytes(), b"one")
             self.assertEqual((root / rel_paths[1]).read_bytes(), b"two")
-
-    def test_cleanup_session_uploads_removes_session_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            result = persist_attachments(
-                [_FakeUpload("memo.md", b"hello world")],
-                project_root=root,
-                storage_dir="uploads",
-                session_id="session-1",
-                allowed_extensions=("md",),
-                max_file_bytes=1024,
-            )
-            saved_path = root / result.attachments[0].relative_path
-            self.assertTrue(saved_path.exists())
-
-            cleanup_session_uploads(
-                project_root=root,
-                storage_dir="uploads",
-                session_id="session-1",
-            )
-
-            self.assertFalse(saved_path.parent.exists())
 
     def test_cleanup_all_uploads_removes_runtime_files_but_keeps_gitkeep(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

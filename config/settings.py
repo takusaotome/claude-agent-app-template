@@ -19,7 +19,6 @@ def _load_dotenv_if_enabled() -> None:
 _load_dotenv_if_enabled()
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CLAUDE_DIR = PROJECT_ROOT / ".claude"
 MCP_CONFIG_PATH = PROJECT_ROOT / ".mcp.json"
 
 APP_TITLE = "Claude Agent App Template"
@@ -100,6 +99,7 @@ DEFAULT_PERMISSION_MODE: PermissionMode = _parse_permission_mode(
 )
 DEFAULT_MAX_RETRIES = int(os.getenv("CLAUDE_MAX_RETRIES", "2"))
 DEFAULT_RETRY_BACKOFF_SECONDS = float(os.getenv("CLAUDE_RETRY_BACKOFF_SECONDS", "0.5"))
+LEGACY_AUTH_MODE = os.getenv("CLAUDE_AUTH_MODE", "").strip().lower()
 
 SETTING_SOURCES = _parse_setting_sources(os.getenv("CLAUDE_SETTING_SOURCES", "project,local"))
 UI_LOCALE: UiLocale = _parse_ui_locale(os.getenv("APP_LOCALE", "en").strip().lower())
@@ -131,6 +131,10 @@ CONTEXT_MAX_CHARS = _parse_positive_int(
     default=12000,
     minimum=1000,
 )
+REQUESTS_PER_MINUTE_LIMIT = _parse_positive_int(
+    os.getenv("REQUESTS_PER_MINUTE_LIMIT", "20"),
+    default=20,
+)
 
 
 def validate_runtime_environment() -> list[str]:
@@ -142,6 +146,18 @@ def validate_runtime_environment() -> list[str]:
             "API key authentication."
         )
     return errors
+
+
+def get_auth_compliance_warnings() -> list[str]:
+    """Return warnings when legacy/unsupported auth settings are present."""
+    warnings: list[str] = []
+    if LEGACY_AUTH_MODE and LEGACY_AUTH_MODE != "api_key":
+        warnings.append(
+            "CLAUDE_AUTH_MODE is set to a subscription-style mode. "
+            "Claude Agent SDK in this template supports API key auth only. "
+            "Do not use claude.ai subscription/OAuth tokens with Agent SDK."
+        )
+    return warnings
 
 
 def get_auth_description() -> str:

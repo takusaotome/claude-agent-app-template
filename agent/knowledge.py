@@ -8,6 +8,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent.path_utils import is_within
+
 logger = logging.getLogger(__name__)
 
 _EN_STOPWORDS = {
@@ -61,7 +63,7 @@ def resolve_knowledge_dir(project_root: Path, knowledge_dir: str) -> Path:
     if not candidate.is_absolute():
         candidate = root / candidate
     resolved = candidate.resolve()
-    if not _is_within(resolved, root):
+    if not is_within(resolved, root):
         raise ValueError("Knowledge directory must be inside the project root.")
     return resolved
 
@@ -215,7 +217,7 @@ def _parse_rg_output(
 
         path = Path(raw_path)
         resolved = path.resolve() if path.is_absolute() else (root / path).resolve()
-        if not _is_within(resolved, knowledge_root):
+        if not is_within(resolved, knowledge_root):
             continue
 
         rel_path = str(resolved.relative_to(root))
@@ -247,7 +249,3 @@ def _fallback_python_search(
                 if len(matches) >= max_hits:
                     return matches
     return matches
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    return path == root or root in path.parents

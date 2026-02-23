@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from agent.attachments import AttachmentPersistResult, StoredAttachment
 from app import (
     _apply_stream_chunk,
     _build_prompt_context,
     _cleanup_uploads_on_startup_once,
+    _consume_rate_limit,
     _msg,
     _tool_status_label,
 )
@@ -85,6 +88,106 @@ class ApplyStreamChunkTests(unittest.TestCase):
         self.assertIn("hello", prompt)
         self.assertEqual(warnings, [])
         self.assertEqual(attachment_names, [])
+
+    def test_build_prompt_context_with_knowledge_and_attachments(self) -> None:
+        with (
+            patch("app.KNOWLEDGE_ENABLED", True),
+            patch("app.ATTACHMENTS_ENABLED", True),
+            patch("app.resolve_knowledge_dir", return_value=Path(".")),
+            patch(
+                "app.list_knowledge_markdown_files",
+                return_value=["knowledge/guide.md"],
+            ),
+            patch("app.search_knowledge_markdown", return_value=[]),
+            patch(
+                "app.build_knowledge_preamble",
+                return_value="[KNOWLEDGE]\n- knowledge/guide.md",
+            ),
+            patch(
+                "app.persist_attachments",
+                return_value=AttachmentPersistResult(
+                    attachments=[
+                        StoredAttachment(
+                            filename="note.txt",
+                            relative_path="uploads/session-1/note.txt",
+                            size_bytes=4,
+                        )
+                    ],
+                    warnings=["attachment warning"],
+                ),
+            ),
+        ):
+            prompt, warnings, attachment_names = _build_prompt_context(
+                "hello",
+                [object()],
+                attachment_session_id="session-1",
+            )
+
+        self.assertIn("[KNOWLEDGE]", prompt)
+        self.assertIn("[ATTACHMENTS]", prompt)
+        self.assertIn("uploads/session-1/note.txt", prompt)
+        self.assertEqual(warnings, ["attachment warning"])
+        self.assertEqual(attachment_names, ["note.txt"])
+
+    def test_build_prompt_context_surfaces_knowledge_error(self) -> None:
+        with (
+            patch("app.KNOWLEDGE_ENABLED", True),
+            patch("app.ATTACHMENTS_ENABLED", False),
+            patch("app.resolve_knowledge_dir", side_effect=ValueError("invalid knowledge dir")),
+        ):
+            prompt, warnings, attachment_names = _build_prompt_context(
+                "hello",
+                [],
+                attachment_session_id="session-1",
+            )
+
+        self.assertIn("[USER_MESSAGE]", prompt)
+        self.assertEqual(attachment_names, [])
+        self.assertTrue(warnings)
+        self.assertIn("invalid knowledge dir", warnings[0])
+
+    def test_build_prompt_context_surfaces_attachment_error(self) -> None:
+        with (
+            patch("app.KNOWLEDGE_ENABLED", False),
+            patch("app.ATTACHMENTS_ENABLED", True),
+            patch("app.persist_attachments", side_effect=ValueError("invalid uploads dir")),
+        ):
+            prompt, warnings, attachment_names = _build_prompt_context(
+                "hello",
+                [object()],
+                attachment_session_id="session-1",
+            )
+
+        self.assertIn("[USER_MESSAGE]", prompt)
+        self.assertEqual(attachment_names, [])
+        self.assertTrue(warnings)
+        self.assertIn("invalid uploads dir", warnings[0])
+
+
+class RateLimitTests(unittest.TestCase):
+    """Behavior tests for minute-level request limiting."""
+
+    def test_consume_rate_limit_allows_and_appends_timestamp(self) -> None:
+        updated, limited, retry = _consume_rate_limit(
+            100.0,
+            [10.0, 39.0],
+            limit=3,
+        )
+
+        self.assertFalse(limited)
+        self.assertEqual(retry, 0)
+        self.assertEqual(updated, [100.0])
+
+    def test_consume_rate_limit_blocks_at_limit(self) -> None:
+        updated, limited, retry = _consume_rate_limit(
+            100.0,
+            [50.0, 70.0, 80.0],
+            limit=3,
+        )
+
+        self.assertTrue(limited)
+        self.assertEqual(updated, [50.0, 70.0, 80.0])
+        self.assertEqual(retry, 10)
 
 
 class StartupUploadCleanupTests(unittest.TestCase):

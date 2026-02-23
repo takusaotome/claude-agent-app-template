@@ -34,7 +34,9 @@ from config.settings import (
     KNOWLEDGE_ENABLED,
     KNOWLEDGE_MAX_HITS,
     PROJECT_ROOT,
+    REQUESTS_PER_MINUTE_LIMIT,
     UI_LOCALE,
+    get_auth_compliance_warnings,
     get_auth_description,
     validate_runtime_environment,
 )
@@ -83,12 +85,12 @@ _TEXTS: dict[str, dict[str, str]] = {
         "thinking": "Thinking...",
         "note": "Note",
         "running_tool": "Running {label}...",
+        "rate_limit_exceeded": "Rate limit exceeded ({limit}/min). Try again in about {seconds}s.",
         "chat_error": (
             "Error: chat request failed. Check authentication and network settings. "
             "Details: {details}"
         ),
         "no_response": "(No response)",
-        "attachments_help": "Up to {max_mb}MB per file. Files are saved server-side per session.",
         "attachments_selected": "Attached files:",
         "attachments_error": "Attachment setup error: {details}",
         "attachment_only_prompt": "Please analyze the attached files and summarize key points.",
@@ -104,14 +106,14 @@ _TEXTS: dict[str, dict[str, str]] = {
         "thinking": "考え中...",
         "note": "注意",
         "running_tool": "{label} を実行中...",
+        "rate_limit_exceeded": (
+            "送信上限（1分あたり{limit}件）を超えました。約{seconds}秒後に再試行してください。"
+        ),
         "chat_error": (
             "エラー: チャットリクエストに失敗しました。認証とネットワーク設定を確認してください。"
             " 詳細: {details}"
         ),
         "no_response": "(応答なし)",
-        "attachments_help": (
-            "1ファイル最大 {max_mb}MB。添付はサーバー側のセッション領域に保存されます。"
-        ),
         "attachments_selected": "添付ファイル:",
         "attachments_error": "添付設定エラー: {details}",
         "attachment_only_prompt": "添付ファイルを解析して、要点を要約してください。",
@@ -274,6 +276,8 @@ def _initialize_session_state() -> None:
         st.session_state.agent = ClaudeChatAgent(project_root=PROJECT_ROOT)
     if "attachment_session_id" not in st.session_state:
         st.session_state.attachment_session_id = uuid4().hex
+    if "request_timestamps" not in st.session_state:
+        st.session_state.request_timestamps = []
 
 
 def _cleanup_uploads_on_startup_once() -> None:
@@ -304,13 +308,14 @@ async def _stream_response(
 
     async for chunk in agent.send_message_streaming(prompt):
         ctype = chunk.get("type")
-        content = sanitize(chunk.get("content", ""))
+        content = chunk.get("content", "")
+        safe_content = sanitize(content)
 
-        if _apply_stream_chunk(final_text_parts, {"type": ctype or "", "content": content}):
+        if _apply_stream_chunk(final_text_parts, {"type": ctype or "", "content": safe_content}):
             status_placeholder.empty()
-            response_placeholder.markdown(sanitize("".join(final_text_parts)) + " ▌")
+            response_placeholder.markdown("".join(final_text_parts) + " ▌")
         elif ctype == "tool_use":
-            label = _tool_status_label(content)
+            label = _tool_status_label(safe_content)
             status_placeholder.status(_msg("running_tool", label=label), state="running")
         elif ctype == "tool_result":
             status_placeholder.status(_msg("thinking"), state="running")
@@ -319,7 +324,7 @@ async def _stream_response(
         final_text_parts.append(_msg("no_response"))
 
     status_placeholder.empty()
-    return sanitize("".join(final_text_parts))
+    return "".join(final_text_parts)
 
 
 def _inject_static_assets() -> None:
@@ -377,6 +382,22 @@ def _build_prompt_context(
     return builder.build(), warnings, attachment_names
 
 
+def _consume_rate_limit(
+    now_seconds: float,
+    timestamps: list[float],
+    *,
+    limit: int,
+    window_seconds: float = 60.0,
+) -> tuple[list[float], bool, int]:
+    """Return updated timestamps and whether this request should be blocked."""
+    recent = [ts for ts in timestamps if now_seconds - ts < window_seconds]
+    if len(recent) >= limit:
+        retry_after = max(1, int(window_seconds - (now_seconds - recent[0])))
+        return recent, True, retry_after
+    recent.append(now_seconds)
+    return recent, False, 0
+
+
 def render_app() -> None:
     """Render the Streamlit chat app."""
     _configure_logging()
@@ -399,7 +420,11 @@ def render_app() -> None:
                 logger.exception("Attachment storage cleanup failed")
             st.session_state.messages = []
             st.session_state.attachment_session_id = uuid4().hex
+            st.session_state.request_timestamps = []
             st.rerun()
+
+    for warning in get_auth_compliance_warnings():
+        st.warning(warning)
 
     runtime_errors = validate_runtime_environment()
     if runtime_errors:
@@ -438,6 +463,22 @@ def render_app() -> None:
         return
     if not prompt.strip() and uploaded_files:
         prompt = _msg("attachment_only_prompt")
+
+    updated_timestamps, is_limited, retry_after = _consume_rate_limit(
+        now_seconds=datetime.now(UTC).timestamp(),
+        timestamps=st.session_state.request_timestamps,
+        limit=REQUESTS_PER_MINUTE_LIMIT,
+    )
+    st.session_state.request_timestamps = updated_timestamps
+    if is_limited:
+        st.warning(
+            _msg(
+                "rate_limit_exceeded",
+                limit=REQUESTS_PER_MINUTE_LIMIT,
+                seconds=retry_after,
+            )
+        )
+        return
 
     prompt_for_agent, context_warnings, attachment_names = _build_prompt_context(
         prompt,
