@@ -43,8 +43,20 @@ class KnowledgeTests(unittest.TestCase):
 
     def test_build_pattern_escapes_special_characters(self) -> None:
         pattern = build_knowledge_pattern("auth? token+")
-        self.assertIn(r"auth\?", pattern)
+        self.assertIn(r"\bauth\b", pattern)
         self.assertIn(r"token\+", pattern)
+
+    def test_build_pattern_skips_english_stopwords(self) -> None:
+        pattern = build_knowledge_pattern("What is the recommended auth mode?")
+        self.assertIn(r"\brecommended\b", pattern)
+        self.assertIn(r"\bauth\b", pattern)
+        self.assertIn(r"\bmode\b", pattern)
+        self.assertNotIn("What", pattern)
+        self.assertNotIn("the", pattern)
+
+    def test_build_pattern_removes_duplicate_terms_case_insensitive(self) -> None:
+        pattern = build_knowledge_pattern("Auth auth AUTH")
+        self.assertEqual(pattern, r"\bAuth\b")
 
     def test_build_pattern_keeps_single_cjk_token(self) -> None:
         pattern = build_knowledge_pattern("認 認証")

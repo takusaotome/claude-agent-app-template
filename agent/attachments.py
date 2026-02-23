@@ -92,6 +92,21 @@ def cleanup_session_uploads(*, project_root: Path, storage_dir: str, session_id:
         shutil.rmtree(session_dir)
 
 
+def cleanup_all_uploads(*, project_root: Path, storage_dir: str) -> None:
+    """Delete all runtime upload artifacts under the storage directory."""
+    storage_root = resolve_storage_root(project_root=project_root, storage_dir=storage_dir)
+    if not storage_root.exists():
+        return
+
+    for child in storage_root.iterdir():
+        if child.name == ".gitkeep":
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def resolve_storage_root(*, project_root: Path, storage_dir: str) -> Path:
     """Resolve upload storage path and enforce project-root confinement."""
     root = project_root.resolve()

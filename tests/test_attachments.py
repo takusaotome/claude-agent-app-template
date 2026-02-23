@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent.attachments import cleanup_session_uploads, persist_attachments, resolve_storage_root
+from agent.attachments import (
+    cleanup_all_uploads,
+    cleanup_session_uploads,
+    persist_attachments,
+    resolve_storage_root,
+)
 
 
 class _FakeUpload:
@@ -123,6 +128,37 @@ class AttachmentTests(unittest.TestCase):
             )
 
             self.assertFalse(saved_path.parent.exists())
+
+    def test_cleanup_all_uploads_removes_runtime_files_but_keeps_gitkeep(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            uploads = root / "uploads"
+            uploads.mkdir(parents=True, exist_ok=True)
+            (uploads / ".gitkeep").write_text("", encoding="utf-8")
+            (uploads / ".DS_Store").write_text("noise", encoding="utf-8")
+
+            persist_attachments(
+                [_FakeUpload("memo.md", b"hello world")],
+                project_root=root,
+                storage_dir="uploads",
+                session_id="session-1",
+                allowed_extensions=("md",),
+                max_file_bytes=1024,
+            )
+            persist_attachments(
+                [_FakeUpload("note.md", b"another")],
+                project_root=root,
+                storage_dir="uploads",
+                session_id="session-2",
+                allowed_extensions=("md",),
+                max_file_bytes=1024,
+            )
+
+            cleanup_all_uploads(project_root=root, storage_dir="uploads")
+
+            self.assertTrue((uploads / ".gitkeep").exists())
+            remaining = [path.name for path in uploads.iterdir()]
+            self.assertEqual(remaining, [".gitkeep"])
 
     def test_resolve_storage_root_rejects_directory_outside_project(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

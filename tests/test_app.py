@@ -5,7 +5,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app import _apply_stream_chunk, _build_prompt_context, _msg, _tool_status_label
+from app import (
+    _apply_stream_chunk,
+    _build_prompt_context,
+    _cleanup_uploads_on_startup_once,
+    _msg,
+    _tool_status_label,
+)
 
 
 class ApplyStreamChunkTests(unittest.TestCase):
@@ -79,3 +85,22 @@ class ApplyStreamChunkTests(unittest.TestCase):
         self.assertIn("hello", prompt)
         self.assertEqual(warnings, [])
         self.assertEqual(attachment_names, [])
+
+
+class StartupUploadCleanupTests(unittest.TestCase):
+    """Behavior tests for startup-time upload cleanup."""
+
+    def test_startup_cleanup_runs_once(self) -> None:
+        with patch("app.ATTACHMENTS_ENABLED", True):
+            with patch("app._UPLOADS_CLEANED_AT_STARTUP", False):
+                with patch("app.cleanup_all_uploads") as mock_cleanup:
+                    _cleanup_uploads_on_startup_once()
+                    _cleanup_uploads_on_startup_once()
+        self.assertEqual(mock_cleanup.call_count, 1)
+
+    def test_startup_cleanup_is_skipped_when_attachments_disabled(self) -> None:
+        with patch("app.ATTACHMENTS_ENABLED", False):
+            with patch("app._UPLOADS_CLEANED_AT_STARTUP", False):
+                with patch("app.cleanup_all_uploads") as mock_cleanup:
+                    _cleanup_uploads_on_startup_once()
+        mock_cleanup.assert_not_called()

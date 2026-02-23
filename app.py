@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import streamlit as st
 from agent.async_bridge import AsyncBridge
-from agent.attachments import cleanup_session_uploads, persist_attachments
+from agent.attachments import cleanup_all_uploads, persist_attachments
 from agent.client import ClaudeChatAgent
 from agent.context_builder import PromptContextBuilder
 from agent.knowledge import (
@@ -42,6 +42,7 @@ from streamlit.elements.widgets.chat import ChatInputValue
 
 logger = logging.getLogger(__name__)
 _LOGGING_CONFIGURED = False
+_UPLOADS_CLEANED_AT_STARTUP = False
 
 
 _TOOL_LABELS: dict[str, dict[str, str]] = {
@@ -275,6 +276,23 @@ def _initialize_session_state() -> None:
         st.session_state.attachment_session_id = uuid4().hex
 
 
+def _cleanup_uploads_on_startup_once() -> None:
+    """Clean runtime upload artifacts once per process start."""
+    global _UPLOADS_CLEANED_AT_STARTUP
+    if _UPLOADS_CLEANED_AT_STARTUP or not ATTACHMENTS_ENABLED:
+        return
+
+    try:
+        cleanup_all_uploads(
+            project_root=PROJECT_ROOT,
+            storage_dir=ATTACHMENTS_STORAGE_DIR,
+        )
+    except (ValueError, OSError):
+        logger.exception("Startup upload cleanup failed")
+
+    _UPLOADS_CLEANED_AT_STARTUP = True
+
+
 async def _stream_response(
     agent: ClaudeChatAgent,
     prompt: str,
@@ -365,6 +383,7 @@ def render_app() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout="wide")
     _inject_static_assets()
     _initialize_session_state()
+    _cleanup_uploads_on_startup_once()
 
     with st.sidebar:
         st.subheader(_msg("sidebar_title"))
@@ -372,13 +391,12 @@ def render_app() -> None:
         st.caption(_msg("sidebar_auth", auth=get_auth_description()))
         if st.button(_msg("clear_chat"), use_container_width=True):
             try:
-                cleanup_session_uploads(
+                cleanup_all_uploads(
                     project_root=PROJECT_ROOT,
                     storage_dir=ATTACHMENTS_STORAGE_DIR,
-                    session_id=st.session_state.attachment_session_id,
                 )
-            except ValueError:
-                logger.warning("Attachment storage cleanup skipped due to invalid configuration")
+            except (ValueError, OSError):
+                logger.exception("Attachment storage cleanup failed")
             st.session_state.messages = []
             st.session_state.attachment_session_id = uuid4().hex
             st.rerun()

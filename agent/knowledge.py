@@ -10,6 +10,40 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_EN_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "by",
+    "can",
+    "could",
+    "did",
+    "do",
+    "does",
+    "for",
+    "how",
+    "i",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "this",
+    "to",
+    "we",
+    "what",
+    "when",
+    "where",
+    "who",
+    "why",
+    "with",
+    "would",
+    "you",
+}
+
 
 @dataclass
 class KnowledgeMatch:
@@ -89,20 +123,33 @@ def search_knowledge_markdown(
 def build_knowledge_pattern(query: str) -> str:
     """Build a safe OR pattern from query terms for ripgrep usage."""
     terms: list[str] = []
+    seen: set[str] = set()
     for token in re.split(r"\s+", query.strip()):
-        normalized = token.strip()
+        normalized = token.strip().strip("`'\".,!?():;[]{}")
         if not normalized:
+            continue
+        lowered = normalized.lower()
+        if normalized.isascii() and lowered in _EN_STOPWORDS:
             continue
         # Keep meaningful single-character CJK tokens while skipping noisy ASCII one-letter tokens.
         if len(normalized) < 2 and len(query.strip()) > 2 and normalized.isascii():
             continue
-        if normalized not in terms:
-            terms.append(normalized)
+        if lowered in seen:
+            continue
+        terms.append(normalized)
+        seen.add(lowered)
         if len(terms) >= 4:
             break
     if not terms and query.strip():
         terms = [query.strip()]
-    return "|".join(re.escape(term) for term in terms)
+    return "|".join(_to_rg_pattern_term(term) for term in terms)
+
+
+def _to_rg_pattern_term(term: str) -> str:
+    escaped = re.escape(term)
+    if term.isascii() and re.fullmatch(r"[A-Za-z0-9_]+", term):
+        return rf"\b{escaped}\b"
+    return escaped
 
 
 def build_knowledge_preamble(files: list[str], matches: list[KnowledgeMatch]) -> str:
