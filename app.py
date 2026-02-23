@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 import streamlit as st
@@ -11,6 +13,8 @@ from agent.client import ClaudeChatAgent
 from agent.sanitizer import sanitize
 from config.settings import (
     APP_ICON,
+    APP_LOG_FORMAT,
+    APP_LOG_LEVEL,
     APP_TITLE,
     PROJECT_ROOT,
     UI_LOCALE,
@@ -18,8 +22,8 @@ from config.settings import (
     validate_runtime_environment,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+_LOGGING_CONFIGURED = False
 
 
 _TOOL_LABELS: dict[str, dict[str, str]] = {
@@ -167,6 +171,40 @@ _IME_FIX_JS = """
 """
 
 
+class _JsonFormatter(logging.Formatter):
+    """Minimal JSON log formatter for production-friendly logs."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def _configure_logging() -> None:
+    """Configure root logger once based on environment settings."""
+    global _LOGGING_CONFIGURED
+    root = logging.getLogger()
+    if _LOGGING_CONFIGURED:
+        return
+
+    handler = logging.StreamHandler()
+    if APP_LOG_FORMAT == "json":
+        handler.setFormatter(_JsonFormatter())
+    else:
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(getattr(logging, APP_LOG_LEVEL, logging.INFO))
+    _LOGGING_CONFIGURED = True
+
+
 def _tool_status_label(tool_name: str) -> str:
     """Convert an SDK tool name to a user-friendly label."""
     short = tool_name.split("__")[-1] if "__" in tool_name else tool_name
@@ -239,6 +277,7 @@ def _inject_static_assets() -> None:
 
 def render_app() -> None:
     """Render the Streamlit chat app."""
+    _configure_logging()
     st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout="wide")
     _inject_static_assets()
     _initialize_session_state()

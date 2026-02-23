@@ -49,11 +49,17 @@ Streamlit reruns scripts synchronously, so `AsyncBridge` maintains a persistent 
 
 `ClaudeChatAgent.send_message_streaming()` connects to `ClaudeSDKClient` and normalizes `StreamEvent` (text deltas), `AssistantMessage` (complete text), `ToolUseBlock` (tool calls), and `ResultMessage` (errors/completion) into `StreamChunk` dicts that the UI consumes.
 
+### Sandbox Trade-off
+
+- SDK sandbox mode is controlled by `CLAUDE_SDK_SANDBOX_ENABLED` (`false` by default).
+- Default `false` keeps behavior aligned with project-level permission policies in `.claude/settings.json` and avoids unexpected tool execution differences in Streamlit sessions.
+- For stricter runtime isolation requirements, set `CLAUDE_SDK_SANDBOX_ENABLED=true` and validate your workflow/tooling under sandbox constraints.
+
 ## Configuration
 
 | Location | Purpose |
 |---|---|
-| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_AUTH_MODE`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE` |
+| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_AUTH_MODE`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE`, `APP_LOG_FORMAT`, `APP_LOG_LEVEL`, `CLAUDE_SDK_SANDBOX_ENABLED` |
 | `.claude/agents/*.md` | Agent definitions (frontmatter + system prompt) |
 | `.claude/skills/<name>/SKILL.md` | Skill definitions; place domain knowledge in `references/` |
 | `.mcp.json` | MCP server definitions (`mcpServers` key) |

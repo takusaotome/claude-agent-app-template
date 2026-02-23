@@ -60,6 +60,7 @@ claude-agent-app-template/
 ├── requirements-dev.txt
 ├── Dockerfile
 ├── docker-compose.yml
+├── .dockerignore
 ├── pyproject.toml
 ├── .pre-commit-config.yaml
 ├── LICENSE
@@ -107,6 +108,9 @@ When `CLAUDE_AUTH_MODE=auto` (default), the app tries the API key first and fall
 | `CLAUDE_MAX_RETRIES` | Retry count on connection/query failure | `2` |
 | `CLAUDE_RETRY_BACKOFF_SECONDS` | Wait time between retries (linear backoff) | `0.5` |
 | `APP_LOCALE` | UI language (`en` / `ja`) | `en` |
+| `APP_LOG_FORMAT` | Log format (`text` / `json`) | `text` |
+| `APP_LOG_LEVEL` | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`) | `INFO` |
+| `CLAUDE_SDK_SANDBOX_ENABLED` | SDK sandbox toggle (`true` / `false`) | `false` |
 
 For non-interactive Streamlit usage, set `CLAUDE_PERMISSION_MODE=acceptEdits` only when your workflow requires automatic file edits.
 
@@ -145,6 +149,7 @@ Define MCP servers under the `mcpServers` key:
 - **Output sanitization** (`agent/sanitizer.py`) redacts API keys and absolute paths from responses
 - Output sanitization is a display-layer safeguard; it does not replace permission controls
 - **System prompt restrictions** prevent the agent from accessing `.env`, credentials, or navigating outside the project
+- SDK sandbox is disabled by default (`CLAUDE_SDK_SANDBOX_ENABLED=false`) to keep Streamlit + project-scoped permission flow predictable; enable it when your runtime policy requires additional process isolation
 - See `CLAUDE.md` for the full security policy
 
 ## Scripts Policy
@@ -160,6 +165,7 @@ docker compose up --build
 ```
 
 Then open `http://localhost:8501`.
+Container health endpoint: `/_stcore/health` (used by Docker `HEALTHCHECK` and Compose health probes).
 
 ## Testing
 

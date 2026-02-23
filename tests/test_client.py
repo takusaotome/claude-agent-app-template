@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import agent.client as client_module
@@ -300,6 +301,18 @@ class ClaudeChatAgentTests(unittest.TestCase):
                 self.assertFalse(agent._connected)
 
             asyncio.run(_run())
+
+    def test_build_options_respects_sdk_sandbox_flag(self) -> None:
+        with patch.object(
+            client_module,
+            "ClaudeAgentOptions",
+            side_effect=lambda **kwargs: SimpleNamespace(**kwargs),
+        ):
+            with patch.object(client_module, "SDK_SANDBOX_ENABLED", True):
+                agent = client_module.ClaudeChatAgent(project_root=Path("."))
+                options = agent._build_options()
+
+        self.assertEqual(options.sandbox, {"enabled": True})
 
     def test_unknown_message_class_is_silently_skipped(self) -> None:
         """Messages of an unrecognized type are logged but not yielded."""

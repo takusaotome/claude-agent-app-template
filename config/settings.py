@@ -29,6 +29,8 @@ PermissionMode = Literal["default", "acceptEdits", "plan", "bypassPermissions"]
 SettingSource = Literal["user", "project", "local"]
 AuthMode = Literal["auto", "api_key", "subscription"]
 UiLocale = Literal["en", "ja"]
+LogFormat = Literal["text", "json"]
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 def _parse_permission_mode(raw: str) -> PermissionMode:
@@ -58,6 +60,27 @@ def _parse_ui_locale(raw: str) -> UiLocale:
     return "en"
 
 
+def _parse_log_format(raw: str) -> LogFormat:
+    if raw in {"text", "json"}:
+        return cast(LogFormat, raw)
+    return "text"
+
+
+def _parse_log_level(raw: str) -> LogLevel:
+    if raw in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        return cast(LogLevel, raw)
+    return "INFO"
+
+
+def _parse_bool(raw: str, *, default: bool = False) -> bool:
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 DEFAULT_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 DEFAULT_PERMISSION_MODE: PermissionMode = _parse_permission_mode(
@@ -71,6 +94,9 @@ SETTING_SOURCES = _parse_setting_sources(os.getenv("CLAUDE_SETTING_SOURCES", "pr
 
 AUTH_MODE: AuthMode = _parse_auth_mode(os.getenv("CLAUDE_AUTH_MODE", "auto").strip())
 UI_LOCALE: UiLocale = _parse_ui_locale(os.getenv("APP_LOCALE", "en").strip().lower())
+APP_LOG_FORMAT: LogFormat = _parse_log_format(os.getenv("APP_LOG_FORMAT", "text").strip().lower())
+APP_LOG_LEVEL: LogLevel = _parse_log_level(os.getenv("APP_LOG_LEVEL", "INFO").strip().upper())
+SDK_SANDBOX_ENABLED = _parse_bool(os.getenv("CLAUDE_SDK_SANDBOX_ENABLED", "0"), default=False)
 
 
 def _detect_cli_subscription() -> bool:

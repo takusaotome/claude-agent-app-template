@@ -25,6 +25,7 @@ from config.settings import (
     DEFAULT_PERMISSION_MODE,
     DEFAULT_RETRY_BACKOFF_SECONDS,
     MCP_CONFIG_PATH,
+    SDK_SANDBOX_ENABLED,
     SETTING_SOURCES,
     PermissionMode,
 )
@@ -76,7 +77,7 @@ class ClaudeChatAgent:
             setting_sources=SETTING_SOURCES,
             include_partial_messages=True,
             mcp_servers=mcp_config,
-            sandbox={"enabled": False},
+            sandbox={"enabled": SDK_SANDBOX_ENABLED},
         )
 
     async def connect(self) -> None:

@@ -65,6 +65,44 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.UI_LOCALE, "ja")
 
+    def test_log_settings_defaults(self) -> None:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "dummy"}, clear=True):
+            settings = self._reload_settings()
+
+        self.assertEqual(settings.APP_LOG_FORMAT, "text")
+        self.assertEqual(settings.APP_LOG_LEVEL, "INFO")
+
+    def test_log_settings_parse_custom_values(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "dummy",
+                "APP_LOG_FORMAT": "json",
+                "APP_LOG_LEVEL": "warning",
+            },
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        self.assertEqual(settings.APP_LOG_FORMAT, "json")
+        self.assertEqual(settings.APP_LOG_LEVEL, "WARNING")
+
+    def test_sdk_sandbox_defaults_to_disabled(self) -> None:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "dummy"}, clear=True):
+            settings = self._reload_settings()
+
+        self.assertFalse(settings.SDK_SANDBOX_ENABLED)
+
+    def test_sdk_sandbox_can_be_enabled(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ANTHROPIC_API_KEY": "dummy", "CLAUDE_SDK_SANDBOX_ENABLED": "true"},
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        self.assertTrue(settings.SDK_SANDBOX_ENABLED)
+
     def test_custom_model_is_respected(self) -> None:
         with patch.dict(
             os.environ,
