@@ -2,6 +2,8 @@
 
 A minimal chat application template built with Claude Agent SDK + Streamlit.
 
+![App Screenshot](docs/images/app-screenshot.png)
+
 Design goals:
 - The Python layer handles **only** chat UI and SDK connectivity
 - Agents, skills, and MCP servers are managed through configuration files
@@ -57,6 +59,9 @@ claude-agent-app-template/
 │   └── .gitkeep
 ├── uploads/                      # Runtime attachment storage (gitignored)
 │   └── .gitkeep
+├── docs/
+│   └── images/
+│       └── app-screenshot.png    # README screenshot
 ├── .claude/
 │   ├── settings.json             # Project-level permission rules
 │   ├── agents/
