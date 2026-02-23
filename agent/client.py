@@ -120,6 +120,7 @@ class ClaudeChatAgent:
         client = self._require_client()
         await client.query(user_message)
         emitted_delta = False
+        last_tool_error_detail = ""
 
         async for message in client.receive_response():
             try:
@@ -152,14 +153,25 @@ class ClaudeChatAgent:
                         for block in message.content:
                             if isinstance(block, ToolResultBlock):
                                 is_err = block.is_error or False
+                                detail = _extract_tool_result_detail(block.content)
+                                if is_err and detail:
+                                    last_tool_error_detail = detail
                                 yield {
                                     "type": "tool_result",
-                                    "content": "error" if is_err else "success",
+                                    "content": (
+                                        f"error: {detail}"
+                                        if is_err and detail
+                                        else ("error" if is_err else "success")
+                                    ),
                                 }
 
                 elif isinstance(message, ResultMessage):
                     if message.is_error:
-                        yield {"type": "error", "content": message.result or "Unknown error"}
+                        error_detail = _build_result_error_detail(
+                            message=message,
+                            last_tool_error_detail=last_tool_error_detail,
+                        )
+                        yield {"type": "error", "content": error_detail}
                     else:
                         yield {"type": "done", "content": message.session_id}
 
@@ -203,3 +215,39 @@ class ClaudeChatAgent:
         if last_error is not None:
             error_message = f"{error_message} {last_error}"
         yield {"type": "error", "content": error_message}
+
+
+def _extract_tool_result_detail(content: str | list[dict[str, Any]] | None) -> str:
+    """Extract readable error detail from a tool_result content payload."""
+    if isinstance(content, str):
+        return " ".join(content.split()).strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(" ".join(text.split()))
+                continue
+            value = item.get("value")
+            if isinstance(value, str) and value.strip():
+                parts.append(" ".join(value.split()))
+        return " ".join(parts).strip()
+    return ""
+
+
+def _build_result_error_detail(
+    *,
+    message: ResultMessage,
+    last_tool_error_detail: str,
+) -> str:
+    """Compose a non-empty error detail for UI consumption."""
+    parts: list[str] = []
+    if isinstance(message.result, str) and message.result.strip():
+        parts.append(message.result.strip())
+    if hasattr(message, "subtype") and isinstance(message.subtype, str) and message.subtype:
+        parts.append(f"subtype={message.subtype}")
+    if last_tool_error_detail:
+        parts.append(f"tool={last_tool_error_detail}")
+    return " | ".join(parts) if parts else "Unknown error"

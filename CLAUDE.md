@@ -36,6 +36,9 @@ app.py                  Streamlit UI (entry point)
 agent/client.py         ClaudeChatAgent: wraps SDK streaming responses
   ↓ uses
 agent/async_bridge.py   AsyncBridge: runs async coroutines in Streamlit's sync context
+agent/attachments.py    Server-side attachment persistence for txt/md/csv/json
+agent/knowledge.py      knowledge/*.md listing + on-demand rg search
+agent/context_builder.py Prompt context composer with character budget
 agent/sanitizer.py      Output sanitizer: redacts secrets and system paths
 agent/_sdk_patch.py     Monkey-patch for unrecognized SDK message types
 config/settings.py      .env → environment variable loading and constants
@@ -59,12 +62,13 @@ Streamlit reruns scripts synchronously, so `AsyncBridge` maintains a persistent 
 
 | Location | Purpose |
 |---|---|
-| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_AUTH_MODE`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE`, `APP_LOG_FORMAT`, `APP_LOG_LEVEL`, `CLAUDE_SDK_SANDBOX_ENABLED` |
+| `.env` | `ANTHROPIC_API_KEY`, `CLAUDE_AUTH_MODE`, `CLAUDE_MODEL`, `CLAUDE_PERMISSION_MODE`, `CLAUDE_SETTING_SOURCES`, `APP_LOCALE`, `APP_LOG_FORMAT`, `APP_LOG_LEVEL`, `CLAUDE_SDK_SANDBOX_ENABLED`, attachment/knowledge/context settings |
 | `.claude/agents/*.md` | Agent definitions (frontmatter + system prompt) |
 | `.claude/skills/<name>/SKILL.md` | Skill definitions; place domain knowledge in `references/` |
 | `.mcp.json` | MCP server definitions (`mcpServers` key) |
 | `.claude/settings.json` | Project-level permission rules |
 | `.github/workflows/ci.yml` | CI checks for lint/typecheck/tests |
+| `knowledge/*.md` | Local markdown knowledge corpus referenced at answer time |
 
 ## Development Practice — TDD (Test-Driven Development)
 
@@ -95,6 +99,8 @@ This project adopts TDD as the standard development methodology.
 ## Sandbox Rules — Code Execution via Chat UI
 
 This project runs a Claude Agent through a Streamlit chat UI. When the agent creates and executes scripts on behalf of the user, it **must** follow these rules.
+
+Project permissions allow `grep/rg` shell usage only for `knowledge/` paths.
 
 ### File Creation Rules
 

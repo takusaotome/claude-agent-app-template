@@ -17,6 +17,8 @@ Design goals:
 - IME composition fix for Safari / Chrome (Japanese input support)
 - Subscription authentication support (`claude login`)
 - Bilingual UI (`APP_LOCALE=en|ja`)
+- Chat-input integrated attachments (`txt/md/csv/json`) with server-side persistence
+- `knowledge/*.md` lookup via `rg` at request time (no index)
 
 ## Requirements
 
@@ -32,19 +34,29 @@ claude-agent-app-template/
 ├── agent/
 │   ├── __init__.py               # SDK patch auto-apply
 │   ├── async_bridge.py           # Async-to-sync bridge for Streamlit
+│   ├── attachments.py            # Server-side attachment persistence
 │   ├── client.py                 # ClaudeChatAgent (SDK wrapper)
+│   ├── context_builder.py        # Prompt context composer
+│   ├── knowledge.py              # knowledge/*.md listing and rg search
 │   ├── sanitizer.py              # Output sanitizer (secrets & paths)
 │   └── _sdk_patch.py             # Monkey-patch for unknown SDK events
 ├── config/
 │   └── settings.py               # Environment variables and constants
 ├── tests/
+│   ├── test_attachments.py
 │   ├── test_app.py
 │   ├── test_async_bridge.py
 │   ├── test_client.py
+│   ├── test_context_builder.py
+│   ├── test_knowledge.py
 │   ├── test_sdk_patch.py
 │   ├── test_sanitizer.py
 │   └── test_settings.py
 ├── scripts/                      # User-generated scripts (via chat)
+├── knowledge/                    # Project knowledge markdown files
+│   └── .gitkeep
+├── uploads/                      # Runtime attachment storage (gitignored)
+│   └── .gitkeep
 ├── .claude/
 │   ├── settings.json             # Project-level permission rules
 │   ├── agents/
@@ -111,6 +123,14 @@ When `CLAUDE_AUTH_MODE=auto` (default), the app tries the API key first and fall
 | `APP_LOG_FORMAT` | Log format (`text` / `json`) | `text` |
 | `APP_LOG_LEVEL` | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`) | `INFO` |
 | `CLAUDE_SDK_SANDBOX_ENABLED` | SDK sandbox toggle (`true` / `false`) | `false` |
+| `ATTACHMENTS_ENABLED` | Enable chat-input attachment button + server-side persistence | `true` |
+| `ATTACHMENTS_MAX_FILE_MB` | Attachment max size per file | `5` |
+| `ATTACHMENTS_ALLOWED_EXT` | Allowed attachment extensions | `txt,md,csv,json` |
+| `ATTACHMENTS_STORAGE_DIR` | Attachment storage directory (under project root) | `uploads` |
+| `KNOWLEDGE_ENABLED` | Enable knowledge folder lookup | `true` |
+| `KNOWLEDGE_DIR` | Knowledge folder path | `knowledge` |
+| `KNOWLEDGE_MAX_HITS` | Max `rg` line hits injected | `8` |
+| `CONTEXT_MAX_CHARS` | Total prompt context budget | `12000` |
 
 For non-interactive Streamlit usage, set `CLAUDE_PERMISSION_MODE=acceptEdits` only when your workflow requires automatic file edits.
 
@@ -144,13 +164,25 @@ Define MCP servers under the `mcpServers` key:
 ## Security
 
 - **Permission rules** in `.claude/settings.json` restrict filesystem access, Bash commands, and tool use
+- `Read(knowledge/**)` and `Read(uploads/**)` are allowed so the agent can read knowledge and uploaded files
 - `Bash(python -c *)` / `Bash(python3 -c *)` are explicitly denied to block arbitrary Python one-liners
+- `grep/rg` shell usage is scoped to `knowledge/` paths in project permissions
 - `pip*`, `python -m pip*`, and `WebFetch(*)` are denied by default (least-privilege baseline)
 - **Output sanitization** (`agent/sanitizer.py`) redacts API keys and absolute paths from responses
 - Output sanitization is a display-layer safeguard; it does not replace permission controls
 - **System prompt restrictions** prevent the agent from accessing `.env`, credentials, or navigating outside the project
 - SDK sandbox is disabled by default (`CLAUDE_SDK_SANDBOX_ENABLED=false`) to keep Streamlit + project-scoped permission flow predictable; enable it when your runtime policy requires additional process isolation
 - See `CLAUDE.md` for the full security policy
+
+## Attachments and Knowledge
+
+- Uploaded attachments are saved server-side under `uploads/<session_id>/`.
+- Attachments are selected from the `+` button inside the chat input (ChatGPT/Claude-style UI).
+- The prompt includes file paths and metadata; the agent reads files at runtime when needed.
+- If you change `ATTACHMENTS_STORAGE_DIR`, update `.claude/settings.json` read permissions accordingly.
+- Knowledge lookup searches `knowledge/*.md` with `rg` on each user request.
+- No index/BM25 is used in Phase 1; this keeps the template dependency-free.
+- Retrieved knowledge hits and attachment file references are merged into the prompt using a bounded `CONTEXT_MAX_CHARS` budget.
 
 ## Scripts Policy
 

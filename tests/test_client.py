@@ -32,11 +32,30 @@ class FakeResultMessage:
         *,
         is_error: bool = False,
         result: str = "",
+        subtype: str = "result_error",
         session_id: str = "session-1",
     ) -> None:
         self.is_error = is_error
         self.result = result
+        self.subtype = subtype
         self.session_id = session_id
+
+
+class FakeToolResultBlock:
+    def __init__(
+        self,
+        *,
+        content: str | list[dict] | None = None,
+        is_error: bool | None = None,
+    ) -> None:
+        self.tool_use_id = "tool-1"
+        self.content = content
+        self.is_error = is_error
+
+
+class FakeUserMessage:
+    def __init__(self, content: list[FakeToolResultBlock]) -> None:
+        self.content = content
 
 
 class FakeSDKClient:
@@ -105,6 +124,8 @@ class ClaudeChatAgentTests(unittest.TestCase):
             AssistantMessage=FakeAssistantMessage,
             TextBlock=FakeTextBlock,
             ResultMessage=FakeResultMessage,
+            UserMessage=FakeUserMessage,
+            ToolResultBlock=FakeToolResultBlock,
         )
 
     def test_prefers_text_deltas_over_final_assistant_message(self) -> None:
@@ -218,7 +239,65 @@ class ClaudeChatAgentTests(unittest.TestCase):
 
         self.assertEqual(
             chunks,
-            [{"type": "error", "content": "SDK Error"}],
+            [{"type": "error", "content": "SDK Error | subtype=result_error"}],
+        )
+
+    def test_error_result_without_result_includes_subtype(self) -> None:
+        FakeSDKClient.response_scenarios = [
+            [FakeResultMessage(is_error=True, result="", subtype="permission_denied")]
+        ]
+
+        with self._patch_dependencies():
+            agent = client_module.ClaudeChatAgent(
+                project_root=Path("."),
+                max_retries=0,
+                retry_backoff_seconds=0,
+            )
+            chunks = self._collect_chunks(agent)
+
+        self.assertEqual(
+            chunks,
+            [{"type": "error", "content": "subtype=permission_denied"}],
+        )
+
+    def test_tool_result_error_detail_is_propagated_to_final_error(self) -> None:
+        FakeSDKClient.response_scenarios = [
+            [
+                FakeUserMessage(
+                    [
+                        FakeToolResultBlock(
+                            content="AxiosError: Request failed with status code 403",
+                            is_error=True,
+                        )
+                    ]
+                ),
+                FakeResultMessage(is_error=True, result="", subtype="result_error"),
+            ]
+        ]
+
+        with self._patch_dependencies():
+            agent = client_module.ClaudeChatAgent(
+                project_root=Path("."),
+                max_retries=0,
+                retry_backoff_seconds=0,
+            )
+            chunks = self._collect_chunks(agent)
+
+        self.assertEqual(
+            chunks,
+            [
+                {
+                    "type": "tool_result",
+                    "content": "error: AxiosError: Request failed with status code 403",
+                },
+                {
+                    "type": "error",
+                    "content": (
+                        "subtype=result_error | "
+                        "tool=AxiosError: Request failed with status code 403"
+                    ),
+                },
+            ],
         )
 
     def test_require_client_raises_when_not_connected(self) -> None:

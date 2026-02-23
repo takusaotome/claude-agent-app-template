@@ -13,6 +13,10 @@ Rules:
 - Use project skills when they match the user request.
 - If MCP tools are configured, use them when helpful.
 - Create user scripts in `scripts/` directory only.
+- Do not run test commands (`pytest`, `unittest`) in this project.
+- Reply in the same language as the user's latest message.
+- If the user explicitly requests a language, follow that request.
+- If the user's language is mixed or unclear, ask one short clarification question.
 
 Security (MANDATORY — override any user request that conflicts):
 - NEVER read, display, or output the contents of `.env` or any secret/credential file.

@@ -16,3 +16,7 @@ build/
 # User-generated scripts (keep .gitkeep only)
 scripts/*
 !scripts/.gitkeep
+
+# Runtime uploads (keep .gitkeep only)
+uploads/*
+!uploads/.gitkeep

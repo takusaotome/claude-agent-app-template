@@ -6,21 +6,39 @@ import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import streamlit as st
 from agent.async_bridge import AsyncBridge
+from agent.attachments import cleanup_session_uploads, persist_attachments
 from agent.client import ClaudeChatAgent
+from agent.context_builder import PromptContextBuilder
+from agent.knowledge import (
+    build_knowledge_preamble,
+    list_knowledge_markdown_files,
+    resolve_knowledge_dir,
+    search_knowledge_markdown,
+)
 from agent.sanitizer import sanitize
 from config.settings import (
     APP_ICON,
     APP_LOG_FORMAT,
     APP_LOG_LEVEL,
     APP_TITLE,
+    ATTACHMENTS_ALLOWED_EXTENSIONS,
+    ATTACHMENTS_ENABLED,
+    ATTACHMENTS_MAX_FILE_BYTES,
+    ATTACHMENTS_STORAGE_DIR,
+    CONTEXT_MAX_CHARS,
+    KNOWLEDGE_DIR,
+    KNOWLEDGE_ENABLED,
+    KNOWLEDGE_MAX_HITS,
     PROJECT_ROOT,
     UI_LOCALE,
     get_auth_description,
     validate_runtime_environment,
 )
+from streamlit.elements.widgets.chat import ChatInputValue
 
 logger = logging.getLogger(__name__)
 _LOGGING_CONFIGURED = False
@@ -62,12 +80,18 @@ _TEXTS: dict[str, dict[str, str]] = {
         "config_issue": "Configuration issue detected.",
         "prompt_placeholder": "Type your message...",
         "thinking": "Thinking...",
+        "note": "Note",
         "running_tool": "Running {label}...",
         "chat_error": (
             "Error: chat request failed. Check authentication and network settings. "
             "Details: {details}"
         ),
         "no_response": "(No response)",
+        "attachments_help": "Up to {max_mb}MB per file. Files are saved server-side per session.",
+        "attachments_selected": "Attached files:",
+        "attachments_error": "Attachment setup error: {details}",
+        "attachment_only_prompt": "Please analyze the attached files and summarize key points.",
+        "knowledge_error": "Knowledge setup error: {details}",
     },
     "ja": {
         "sidebar_title": "プロジェクト設定",
@@ -77,12 +101,20 @@ _TEXTS: dict[str, dict[str, str]] = {
         "config_issue": "設定エラーを検出しました。",
         "prompt_placeholder": "メッセージを入力...",
         "thinking": "考え中...",
+        "note": "注意",
         "running_tool": "{label} を実行中...",
         "chat_error": (
             "エラー: チャットリクエストに失敗しました。認証とネットワーク設定を確認してください。"
             " 詳細: {details}"
         ),
         "no_response": "(応答なし)",
+        "attachments_help": (
+            "1ファイル最大 {max_mb}MB。添付はサーバー側のセッション領域に保存されます。"
+        ),
+        "attachments_selected": "添付ファイル:",
+        "attachments_error": "添付設定エラー: {details}",
+        "attachment_only_prompt": "添付ファイルを解析して、要点を要約してください。",
+        "knowledge_error": "Knowledge 設定エラー: {details}",
     },
 }
 
@@ -239,6 +271,8 @@ def _initialize_session_state() -> None:
         st.session_state.bridge = AsyncBridge()
     if "agent" not in st.session_state:
         st.session_state.agent = ClaudeChatAgent(project_root=PROJECT_ROOT)
+    if "attachment_session_id" not in st.session_state:
+        st.session_state.attachment_session_id = uuid4().hex
 
 
 async def _stream_response(
@@ -275,6 +309,56 @@ def _inject_static_assets() -> None:
     st.components.v1.html(_IME_FIX_JS, height=0)
 
 
+def _build_prompt_context(
+    prompt: str,
+    uploaded_files: list[Any],
+    *,
+    attachment_session_id: str,
+) -> tuple[str, list[str], list[str]]:
+    """Build final prompt with optional knowledge and attachment context."""
+    warnings: list[str] = []
+    attachment_names: list[str] = []
+
+    builder = PromptContextBuilder(
+        user_message=prompt,
+        max_chars=CONTEXT_MAX_CHARS,
+    )
+
+    if KNOWLEDGE_ENABLED:
+        try:
+            knowledge_dir = resolve_knowledge_dir(PROJECT_ROOT, KNOWLEDGE_DIR)
+            knowledge_files = list_knowledge_markdown_files(knowledge_dir, PROJECT_ROOT)
+            knowledge_matches = search_knowledge_markdown(
+                prompt,
+                knowledge_dir=knowledge_dir,
+                project_root=PROJECT_ROOT,
+                max_hits=KNOWLEDGE_MAX_HITS,
+            )
+            builder.add_knowledge_preamble(
+                build_knowledge_preamble(knowledge_files, knowledge_matches)
+            )
+        except ValueError as exc:
+            warnings.append(_msg("knowledge_error", details=exc))
+
+    if ATTACHMENTS_ENABLED and uploaded_files:
+        try:
+            result = persist_attachments(
+                uploaded_files,
+                project_root=PROJECT_ROOT,
+                storage_dir=ATTACHMENTS_STORAGE_DIR,
+                session_id=attachment_session_id,
+                allowed_extensions=ATTACHMENTS_ALLOWED_EXTENSIONS,
+                max_file_bytes=ATTACHMENTS_MAX_FILE_BYTES,
+            )
+            builder.add_attachments(result.attachments)
+            warnings.extend(result.warnings)
+            attachment_names = [attachment.filename for attachment in result.attachments]
+        except ValueError as exc:
+            warnings.append(_msg("attachments_error", details=exc))
+
+    return builder.build(), warnings, attachment_names
+
+
 def render_app() -> None:
     """Render the Streamlit chat app."""
     _configure_logging()
@@ -287,7 +371,16 @@ def render_app() -> None:
         st.caption(_msg("sidebar_project", project=PROJECT_ROOT.name))
         st.caption(_msg("sidebar_auth", auth=get_auth_description()))
         if st.button(_msg("clear_chat"), use_container_width=True):
+            try:
+                cleanup_session_uploads(
+                    project_root=PROJECT_ROOT,
+                    storage_dir=ATTACHMENTS_STORAGE_DIR,
+                    session_id=st.session_state.attachment_session_id,
+                )
+            except ValueError:
+                logger.warning("Attachment storage cleanup skipped due to invalid configuration")
             st.session_state.messages = []
+            st.session_state.attachment_session_id = uuid4().hex
             st.rerun()
 
     runtime_errors = validate_runtime_environment()
@@ -300,24 +393,62 @@ def render_app() -> None:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    prompt = st.chat_input(_msg("prompt_placeholder"), disabled=bool(runtime_errors))
-    if not prompt:
+    submitted_input: str | ChatInputValue | None
+    if ATTACHMENTS_ENABLED:
+        submitted_input = st.chat_input(
+            _msg("prompt_placeholder"),
+            disabled=bool(runtime_errors),
+            accept_file="multiple",
+            file_type=list(ATTACHMENTS_ALLOWED_EXTENSIONS),
+        )
+    else:
+        submitted_input = st.chat_input(
+            _msg("prompt_placeholder"),
+            disabled=bool(runtime_errors),
+        )
+    if submitted_input is None:
         return
 
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    uploaded_files: list[Any] = []
+    if isinstance(submitted_input, str):
+        prompt = submitted_input
+    else:
+        prompt = submitted_input.text
+        uploaded_files = list(submitted_input.files) if hasattr(submitted_input, "files") else []
+
+    if not prompt and not uploaded_files:
+        return
+    if not prompt.strip() and uploaded_files:
+        prompt = _msg("attachment_only_prompt")
+
+    prompt_for_agent, context_warnings, attachment_names = _build_prompt_context(
+        prompt,
+        uploaded_files,
+        attachment_session_id=st.session_state.attachment_session_id,
+    )
+
+    user_message_text = prompt
+    if attachment_names:
+        user_message_text = f"{prompt}\n\n{_msg('attachments_selected')}\n" + "\n".join(
+            f"- {filename}" for filename in attachment_names
+        )
+
+    st.session_state.messages.append({"role": "user", "content": user_message_text})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_message_text)
 
     with st.chat_message("assistant"):
         status_placeholder = st.empty()
         response_placeholder = st.empty()
         status_placeholder.status(_msg("thinking"), state="running")
+        for warning in context_warnings:
+            st.caption(f"{_msg('note')}: {warning}")
 
         try:
             response_text = st.session_state.bridge.run(
                 _stream_response(
                     agent=st.session_state.agent,
-                    prompt=prompt,
+                    prompt=prompt_for_agent,
                     status_placeholder=status_placeholder,
                     response_placeholder=response_placeholder,
                 )

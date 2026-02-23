@@ -81,6 +81,25 @@ def _parse_bool(raw: str, *, default: bool = False) -> bool:
     return default
 
 
+def _parse_positive_int(raw: str, *, default: int, minimum: int = 1) -> int:
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
+def _parse_extensions(raw: str, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    parsed: list[str] = []
+    for token in raw.split(","):
+        ext = token.strip().lower().lstrip(".")
+        if ext and ext not in parsed:
+            parsed.append(ext)
+    if not parsed:
+        return default
+    return tuple(parsed)
+
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 DEFAULT_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 DEFAULT_PERMISSION_MODE: PermissionMode = _parse_permission_mode(
@@ -97,6 +116,31 @@ UI_LOCALE: UiLocale = _parse_ui_locale(os.getenv("APP_LOCALE", "en").strip().low
 APP_LOG_FORMAT: LogFormat = _parse_log_format(os.getenv("APP_LOG_FORMAT", "text").strip().lower())
 APP_LOG_LEVEL: LogLevel = _parse_log_level(os.getenv("APP_LOG_LEVEL", "INFO").strip().upper())
 SDK_SANDBOX_ENABLED = _parse_bool(os.getenv("CLAUDE_SDK_SANDBOX_ENABLED", "0"), default=False)
+
+ATTACHMENTS_ENABLED = _parse_bool(os.getenv("ATTACHMENTS_ENABLED", "1"), default=True)
+ATTACHMENTS_MAX_FILE_MB = _parse_positive_int(
+    os.getenv("ATTACHMENTS_MAX_FILE_MB", "5"),
+    default=5,
+)
+ATTACHMENTS_MAX_FILE_BYTES = ATTACHMENTS_MAX_FILE_MB * 1024 * 1024
+ATTACHMENTS_STORAGE_DIR = os.getenv("ATTACHMENTS_STORAGE_DIR", "uploads").strip() or "uploads"
+ATTACHMENTS_ALLOWED_EXTENSIONS = _parse_extensions(
+    os.getenv("ATTACHMENTS_ALLOWED_EXT", "txt,md,csv,json"),
+    default=("txt", "md", "csv", "json"),
+)
+
+KNOWLEDGE_ENABLED = _parse_bool(os.getenv("KNOWLEDGE_ENABLED", "1"), default=True)
+KNOWLEDGE_DIR = os.getenv("KNOWLEDGE_DIR", "knowledge").strip() or "knowledge"
+KNOWLEDGE_MAX_HITS = _parse_positive_int(
+    os.getenv("KNOWLEDGE_MAX_HITS", "8"),
+    default=8,
+)
+
+CONTEXT_MAX_CHARS = _parse_positive_int(
+    os.getenv("CONTEXT_MAX_CHARS", "12000"),
+    default=12000,
+    minimum=1000,
+)
 
 
 def _detect_cli_subscription() -> bool:

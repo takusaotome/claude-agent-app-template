@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app import _apply_stream_chunk, _msg, _tool_status_label
+from app import _apply_stream_chunk, _build_prompt_context, _msg, _tool_status_label
 
 
 class ApplyStreamChunkTests(unittest.TestCase):
@@ -65,3 +65,17 @@ class ApplyStreamChunkTests(unittest.TestCase):
     def test_message_localization(self) -> None:
         with patch("app.UI_LOCALE", "ja"):
             self.assertEqual(_msg("clear_chat"), "チャットをクリア")
+
+    def test_build_prompt_context_without_knowledge_or_attachments(self) -> None:
+        with patch("app.KNOWLEDGE_ENABLED", False):
+            with patch("app.ATTACHMENTS_ENABLED", False):
+                prompt, warnings, attachment_names = _build_prompt_context(
+                    "hello",
+                    [],
+                    attachment_session_id="test-session",
+                )
+
+        self.assertIn("[USER_MESSAGE]", prompt)
+        self.assertIn("hello", prompt)
+        self.assertEqual(warnings, [])
+        self.assertEqual(attachment_names, [])

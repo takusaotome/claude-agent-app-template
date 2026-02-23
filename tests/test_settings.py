@@ -103,6 +103,46 @@ class SettingsTests(unittest.TestCase):
 
         self.assertTrue(settings.SDK_SANDBOX_ENABLED)
 
+    def test_attachments_and_knowledge_defaults(self) -> None:
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "dummy"}, clear=True):
+            settings = self._reload_settings()
+
+        self.assertTrue(settings.ATTACHMENTS_ENABLED)
+        self.assertEqual(settings.ATTACHMENTS_MAX_FILE_MB, 5)
+        self.assertEqual(settings.ATTACHMENTS_ALLOWED_EXTENSIONS, ("txt", "md", "csv", "json"))
+        self.assertEqual(settings.ATTACHMENTS_STORAGE_DIR, "uploads")
+        self.assertTrue(settings.KNOWLEDGE_ENABLED)
+        self.assertEqual(settings.KNOWLEDGE_DIR, "knowledge")
+        self.assertEqual(settings.KNOWLEDGE_MAX_HITS, 8)
+        self.assertEqual(settings.CONTEXT_MAX_CHARS, 12000)
+
+    def test_context_related_settings_parse_custom_values(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ANTHROPIC_API_KEY": "dummy",
+                "ATTACHMENTS_ENABLED": "false",
+                "ATTACHMENTS_MAX_FILE_MB": "3",
+                "ATTACHMENTS_ALLOWED_EXT": "md,txt",
+                "ATTACHMENTS_STORAGE_DIR": "custom_uploads",
+                "KNOWLEDGE_ENABLED": "false",
+                "KNOWLEDGE_DIR": "knowledge_custom",
+                "KNOWLEDGE_MAX_HITS": "5",
+                "CONTEXT_MAX_CHARS": "9000",
+            },
+            clear=True,
+        ):
+            settings = self._reload_settings()
+
+        self.assertFalse(settings.ATTACHMENTS_ENABLED)
+        self.assertEqual(settings.ATTACHMENTS_MAX_FILE_MB, 3)
+        self.assertEqual(settings.ATTACHMENTS_ALLOWED_EXTENSIONS, ("md", "txt"))
+        self.assertEqual(settings.ATTACHMENTS_STORAGE_DIR, "custom_uploads")
+        self.assertFalse(settings.KNOWLEDGE_ENABLED)
+        self.assertEqual(settings.KNOWLEDGE_DIR, "knowledge_custom")
+        self.assertEqual(settings.KNOWLEDGE_MAX_HITS, 5)
+        self.assertEqual(settings.CONTEXT_MAX_CHARS, 9000)
+
     def test_custom_model_is_respected(self) -> None:
         with patch.dict(
             os.environ,
