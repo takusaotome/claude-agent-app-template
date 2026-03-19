@@ -93,13 +93,13 @@ def _parse_extensions(raw: str, *, default: tuple[str, ...]) -> tuple[str, ...]:
 
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+
 DEFAULT_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 DEFAULT_PERMISSION_MODE: PermissionMode = _parse_permission_mode(
     os.getenv("CLAUDE_PERMISSION_MODE", "default").strip()
 )
 DEFAULT_MAX_RETRIES = int(os.getenv("CLAUDE_MAX_RETRIES", "2"))
 DEFAULT_RETRY_BACKOFF_SECONDS = float(os.getenv("CLAUDE_RETRY_BACKOFF_SECONDS", "0.5"))
-LEGACY_AUTH_MODE = os.getenv("CLAUDE_AUTH_MODE", "").strip().lower()
 
 SETTING_SOURCES = _parse_setting_sources(os.getenv("CLAUDE_SETTING_SOURCES", "project,local"))
 UI_LOCALE: UiLocale = _parse_ui_locale(os.getenv("APP_LOCALE", "en").strip().lower())
@@ -139,29 +139,16 @@ REQUESTS_PER_MINUTE_LIMIT = _parse_positive_int(
 
 def validate_runtime_environment() -> list[str]:
     """Return user-facing configuration errors that block chat requests."""
-    errors: list[str] = []
-    if not ANTHROPIC_API_KEY:
-        errors.append(
-            "ANTHROPIC_API_KEY is not set. Claude Agent SDK in this template requires "
-            "API key authentication."
-        )
-    return errors
+    return []
 
 
 def get_auth_compliance_warnings() -> list[str]:
-    """Return warnings when legacy/unsupported auth settings are present."""
-    warnings: list[str] = []
-    if LEGACY_AUTH_MODE and LEGACY_AUTH_MODE != "api_key":
-        warnings.append(
-            "CLAUDE_AUTH_MODE is set to a subscription-style mode. "
-            "Claude Agent SDK in this template supports API key auth only. "
-            "Do not use claude.ai subscription/OAuth tokens with Agent SDK."
-        )
-    return warnings
+    """Return warnings for misconfigured auth settings."""
+    return []
 
 
 def get_auth_description() -> str:
     """Return a human-readable description of the active auth method."""
     if ANTHROPIC_API_KEY:
         return "API Key"
-    return "Not configured"
+    return "Subscription"
